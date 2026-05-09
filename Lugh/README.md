@@ -1,7 +1,5 @@
 # Lugh — Cybersecurity Toolkit v3.0
 
-**Tempo Communications IT Department**
-
 *Named after Lugh Lámhfhada — the Irish god of skill, craft, and mastery of all arts.*
 
 A standalone, offline-first cybersecurity toolkit with both GUI and CLI interfaces. No server, no cloud — everything runs locally.
