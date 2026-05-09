@@ -1,0 +1,232 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Sidekick Evaluation Fixes
+# Addresses false positives and missing detections
+# from the SIDEKICK Teams Room evaluation.
+# ────────────────────────────────────────────────
+
+# ── NEW: Modern Standby / Connected Standby ──
+# KP566 was being mismatched to hw-cpu-001 (CPU throttling)
+
+---
+id: kp-standby-001
+title: "Modern Standby / Connected Standby Active (KP566)"
+description: >
+  Kernel-Power Event 566 is a Connected Standby / Modern Standby
+  power transition event — NOT CPU thermal throttling. On Teams
+  Room devices, frequent standby transitions can cause UI freezes
+  if the device enters sleep during a meeting. Recommend disabling
+  sleep on AC power for meeting room devices.
+level: informational
+author: BeanFeasa
+tags:
+  - power.standby
+  - modern.standby
+  - teams.room
+detection:
+  selection:
+    event_id|equals:
+      - "566"
+    source|contains:
+      - "Kernel-Power"
+  condition: selection
+
+# ── NEW: SysMain Service Failure ──
+
+---
+id: sw-svc-004
+title: "SysMain / Superfetch Service Crash (Error 87)"
+description: >
+  The SysMain (formerly Superfetch) service terminated with error
+  code 87 (ERROR_INVALID_PARAMETER). This occurs on every boot
+  and indicates SysMain is incompatible with the current system
+  configuration (common on IoT/embedded Windows builds).
+level: medium
+author: BeanFeasa
+tags:
+  - software.service
+  - sysmain
+  - superfetch
+detection:
+  sysmain:
+    message|contains:
+      - "SysMain"
+      - "Superfetch"
+  failure:
+    event_id|equals:
+      - "7023"
+      - "7024"
+    source|contains:
+      - "Service Control Manager"
+  condition: sysmain and failure
+
+# ── NEW: Kernel-Power 41 Hard Lockup (BugcheckCode=0) ──
+
+---
+id: kp41-lockup-001
+title: "Hard System Lockup (Kernel-Power 41, BugcheckCode=0)"
+description: >
+  Kernel-Power Event 41 with BugcheckCode=0 indicates a hard
+  lockup where the system froze without generating a bugcheck
+  dump. This is worse than a standard BSOD because there is no
+  crash dump to analyze — the system simply stopped responding.
+  Common causes: driver deadlock, hardware hang, GPU TDR timeout
+  that never recovered.
+level: critical
+author: BeanFeasa
+tags:
+  - system.lockup
+  - kernel.power
+  - hard.hang
+detection:
+  kp41:
+    event_id|equals:
+      - "41"
+    source|contains:
+      - "Kernel-Power"
+  condition: kp41
+
+# ── NEW: App Control / WDAC Blocking Updates ──
+
+---
+id: wdac-update-block-001
+title: "App Control Blocking Software Update (0x8024000B)"
+description: >
+  Windows Update or app installation failed with error 0x8024000B,
+  which indicates App Control for Business (WDAC) policy is blocking
+  the update. The binary being installed is not in the WDAC allowlist.
+level: high
+author: BeanFeasa
+tags:
+  - wdac
+  - update.blocked
+  - app.control
+detection:
+  selection:
+    message|contains:
+      - "0x8024000B"
+      - "App Control"
+      - "application control"
+  condition: selection
+
+# ── NEW: Driver Install-Fail Loop (7045+7000 same driver) ──
+
+---
+id: drv-install-loop-001
+title: Service Failed to Start After Install
+description: >
+  A service or driver failed to start (EID 7000) immediately after
+  being installed or registered (EID 7045 from same service).
+  Dell Data Vault 7001 (service dependency failure) is excluded —
+  a dependency error means the required service isn't running,
+  which is a configuration issue, not an install-fail loop.
+  The correlation chain chain-drv-install-loop handles the 7045+7000
+  pairing. This rule handles standalone 7000 failure detection.
+level: medium
+author: BeanFeasa
+tags:
+  - software.driver
+  - service.failure
+detection:
+  service_failed_start:
+    event_id|equals:
+      - "7000"
+    source|contains:
+      - "Service Control Manager"
+  filter_dependency:
+    event_id|equals:
+      - "7001"
+      - "7003"
+  condition: service_failed_start and not filter_dependency
+---
+id: wlan-start-001
+title: "WLAN AutoConfig Started Successfully"
+description: >
+  WLAN AutoConfig service started successfully. Event 10001/4000
+  are SUCCESS events — not WiFi disconnection or failures. These
+  fire on every boot as the WLAN subsystem initializes.
+level: informational
+author: BeanFeasa
+tags:
+  - network.wlan
+  - success
+  - boot.normal
+detection:
+  selection:
+    event_id|equals:
+      - "10001"
+      - "4000"
+    source|contains:
+      - "WLAN"
+  condition: selection
+
+# ── NEW: VSS Idle Shutdown (suppress from watchdog) ──
+
+---
+id: vss-idle-001
+title: "VSS Service Idle Shutdown (Normal)"
+description: >
+  Volume Shadow Copy Service shutting down due to idle timeout
+  (Event 8224). This is normal VSS behavior — the service starts
+  on demand, performs snapshot operations, then shuts down when
+  idle. NOT a watchdog timeout or DPC violation.
+level: informational
+author: BeanFeasa
+tags:
+  - storage.vss
+  - idle
+  - normal
+detection:
+  selection:
+    event_id|equals:
+      - "8224"
+    source|contains:
+      - "VSS"
+  condition: selection
+
+# ── NEW: Secure Kernel Boot Measurement (suppress from BitLocker) ──
+
+---
+id: securekernel-boot-001
+title: "Secure Kernel Boot Measurement (Normal)"
+description: >
+  Kernel-Boot Event 27 is a normal Secure Boot/Measured Boot
+  measurement event recording boot component hashes. This is
+  NOT a BitLocker error or boot configuration failure. It fires
+  on every boot of a Secure Boot-enabled system.
+level: informational
+author: BeanFeasa
+tags:
+  - boot.measurement
+  - secure.boot
+  - normal
+detection:
+  selection:
+    event_id|equals:
+      - "27"
+    source|contains:
+      - "Kernel-Boot"
+  condition: selection
+
+# ── NEW: DHCPv6 Client Started (suppress from DHCP failure) ──
+
+---
+id: dhcpv6-start-001
+title: "DHCPv6 Client Service Started (Normal)"
+description: >
+  DHCPv6 Client service started successfully (Event 51046).
+  This is a normal informational boot event, NOT a DHCP failure
+  or address conflict.
+level: informational
+author: BeanFeasa
+tags:
+  - network.dhcp
+  - success
+  - boot.normal
+detection:
+  selection:
+    event_id|equals:
+      - "51046"
+    source|contains:
+      - "DHCPv6"
+      - "Dhcpv6"
+  condition: selection

@@ -1,0 +1,456 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Hardware Failures
+# Covers: Disk, Memory, CPU, GPU, NIC, PSU,
+#         Thermal, Battery, USB, PCI
+# ────────────────────────────────────────────────
+
+---
+id: hw-disk-001
+title: Physical Disk Error (Event 7, 11, 15, 51, 153)
+description: >
+  Detects disk I/O errors reported by the disk driver. These indicate
+  potential drive failure, bad sectors, or cable/controller issues.
+  Event 7=bad block, 11=controller error, 15=not ready, 51=paging error,
+  153=reset period.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.disk
+  - disk.failure
+detection:
+  selection:
+    event_id|equals:
+      - "7"
+      - "11"
+      - "15"
+      - "51"
+      - "153"
+    source|contains:
+      - "disk"
+  condition: selection
+
+---
+id: hw-disk-002
+title: SMART Predictive Failure Warning
+description: >
+  SMART (Self-Monitoring, Analysis and Reporting Technology) has detected
+  an impending drive failure. Immediate backup and replacement recommended.
+level: critical
+author: BeanFeasa
+tags:
+  - hardware.disk
+  - disk.smart
+detection:
+  selection:
+    message|contains:
+      - "SMART"
+      - "predictive failure"
+      - "S.M.A.R.T"
+      - "threshold exceeded"
+      - "impending failure"
+      - "reallocated sector"
+      - "current pending sector"
+      - "uncorrectable sector"
+  condition: selection
+
+---
+id: hw-disk-003
+title: Disk Controller Reset / Timeout
+description: >
+  The disk controller has been reset or a command has timed out,
+  indicating communication issues between the OS and storage hardware.
+  NOTE: Restricted to disk/storage sources only. DNS timeouts and
+  WLAN resets are handled by their respective rules.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.disk
+  - disk.controller
+detection:
+  source_filter:
+    source|contains:
+      - "disk"
+      - "storahci"
+      - "stornvme"
+      - "StorPort"
+      - "atapi"
+      - "iaStor"
+  keywords:
+    message|contains:
+      - "controller error"
+      - "reset to device"
+      - "device not ready"
+      - "the driver detected a controller error"
+      - "the IO operation at logical block"
+  condition: source_filter and keywords
+
+---
+id: hw-mem-001
+title: Memory Hardware Error (WHEA/MCE)
+description: >
+  Hardware memory errors reported via WHEA (Windows Hardware Error
+  Architecture) or Machine Check Exceptions. Scoped to WHEA source
+  to prevent false matches against application crash fault bucket records
+  that include hardware terminology in crash metadata.
+  Previously generated 12 false positives in USVIS-952KC14 by matching
+  CRU_Reporter.exe crash records. Use hw-whea-001 for specific WHEA event IDs.
+level: critical
+author: BeanFeasa
+tags:
+  - hardware.memory
+  - memory.ecc
+  - whea
+detection:
+  selection:
+    source|contains:
+      - "WHEA"
+    message|contains:
+      - "memory error"
+      - "machine check"
+      - "corrected hardware error"
+      - "uncorrectable"
+      - "ECC"
+      - "parity error"
+      - "MCA error"
+  condition: selection
+
+---
+id: hw-mem-002
+title: Memory Corrected Error (Event 47)
+description: >
+  A corrected memory error was detected. Frequent corrected errors
+  often precede uncorrectable failures.
+level: medium
+author: BeanFeasa
+tags:
+  - hardware.memory
+  - whea
+detection:
+  selection:
+    event_id|equals:
+      - "47"
+    source|contains:
+      - "WHEA"
+      - "Microsoft-Windows-WHEA"
+  condition: selection
+
+---
+id: hw-mem-003
+title: Memory Diagnostic Results
+description: >
+  Windows Memory Diagnostic has completed a scan and reported results.
+  Check for error counts in the message.
+level: medium
+author: BeanFeasa
+tags:
+  - hardware.memory
+  - diagnostic
+detection:
+  selection:
+    message|contains:
+      - "MemoryDiagnostics"
+      - "memory diagnostic"
+      - "Windows Memory Diagnostic"
+      - "memory test"
+      - "hardware problems were detected"
+  condition: selection
+
+---
+id: hw-cpu-001
+title: CPU Thermal Throttling
+description: >
+  Processor is being throttled due to overheating. Indicates cooling
+  failure, thermal paste degradation, or environmental issue.
+  NOTE: Kernel-Power Event 566 is Modern Standby, NOT throttling.
+  That event is handled by kp-standby-001 instead.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.cpu
+  - cpu.thermal
+detection:
+  selection:
+    message|contains:
+      - "processor has been throttled"
+      - "processor throttl"
+      - "thermal trip"
+      - "thermal throttling"
+      - "overheating"
+  condition: selection
+
+---
+id: hw-cpu-002
+title: Machine Check Exception (MCE)
+description: >
+  A Machine Check Exception was raised by the CPU, indicating a
+  hardware-level processor or bus error.
+level: critical
+author: BeanFeasa
+tags:
+  - hardware.cpu
+  - mce
+detection:
+  selection:
+    message|contains:
+      - "machine check exception"
+      - "MCE"
+      - "MCERR"
+      - "internal timer error"
+      - "bus/interconnect error"
+      - "cache hierarchy error"
+      - "microcode"
+  condition: selection
+
+---
+id: hw-gpu-001
+title: GPU / Display Driver Failure
+description: >
+  Display adapter driver has crashed, recovered, or failed. TDR
+  (Timeout Detection and Recovery) events indicate GPU instability.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.gpu
+  - display.driver
+detection:
+  selection:
+    message|contains:
+      - "display driver"
+      - "nvlddmkm"
+      - "atikmpag"
+      - "igdkmd"
+      - "TDR"
+      - "timeout detection and recovery"
+      - "display driver stopped responding"
+      - "video scheduler internal error"
+      - "dxgkrnl"
+      - "dxgmms"
+  condition: selection
+
+---
+id: hw-gpu-002
+title: Video / GPU Error
+description: >
+  GPU or video subsystem error detected. May indicate failing VRAM,
+  overheating GPU, or driver TDR timeout.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.gpu
+  - gpu.vram
+detection:
+  selection:
+    message|contains:
+      - "video TDR failure"
+      - "VIDEO_TDR_FAILURE"
+      - "VIDEO_TDR_TIMEOUT"
+      - "video hardware error"
+      - "display driver stopped responding"
+      - "nvlddmkm"
+      - "atikmpag"
+      - "igdkmd64"
+      - "display driver crash"
+  condition: selection
+
+---
+id: hw-nic-001
+title: Network Adapter Reset / Failure
+description: >
+  A network adapter has been reset, disconnected unexpectedly, or
+  reported a hardware failure. Restricted to NIC-specific sources
+  and error patterns. VirtualBox hcmon USB monitor warnings are
+  excluded.
+level: medium
+author: BeanFeasa
+tags:
+  - hardware.nic
+  - network.adapter
+detection:
+  selection:
+    message|contains:
+      - "network adapter has been reset"
+      - "network link is down"
+      - "miniport adapter failed"
+      - "link has been disconnected"
+      - "e1iexpress"
+      - "netvsc error"
+      - "network controller error"
+      - "NIC hardware failure"
+  condition: selection
+
+---
+id: hw-nic-002
+title: Network Adapter Hardware Error (Event 27, 32)
+description: >
+  Network adapter has reported a hardware-level error or has been
+  unexpectedly removed from the system.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.nic
+  - network.error
+detection:
+  selection:
+    event_id|equals:
+      - "27"
+      - "32"
+    source|contains:
+      - "e1i"
+      - "net"
+      - "Tcpip"
+      - "NDIS"
+  condition: selection
+
+---
+id: hw-psu-001
+title: Power Supply / UPS Warning
+description: >
+  UPS or power supply has reported a warning condition — low battery,
+  power loss, or switch to battery.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.psu
+  - power
+detection:
+  selection:
+    message|contains:
+      - "UPS"
+      - "uninterruptible power"
+      - "power loss"
+      - "on battery"
+      - "battery low"
+      - "input power"
+      - "power restored"
+      - "AC power"
+      - "power supply"
+  condition: selection
+
+---
+id: hw-bat-001
+title: Battery Health Degradation
+description: >
+  Laptop battery health has degraded significantly or battery failure
+  reported. Seen on portable devices.
+level: medium
+author: BeanFeasa
+tags:
+  - hardware.battery
+  - laptop
+detection:
+  selection:
+    message|contains:
+      - "battery"
+      - "charge capacity"
+      - "battery health"
+      - "cannot be charged"
+      - "battery degraded"
+      - "battery critical"
+      - "full charge capacity"
+      - "consider replacing"
+  condition: selection
+
+---
+id: hw-usb-001
+title: USB Device Failure / Overcurrent
+description: >
+  A USB device has malfunctioned, drawn too much power, or failed
+  enumeration. May indicate bad cable, hub, or device.
+  NOTE: Restricted to actual USB error patterns. MSI events
+  mentioning USB product names are excluded.
+level: medium
+author: BeanFeasa
+tags:
+  - hardware.usb
+  - usb.failure
+detection:
+  selection:
+    message|contains:
+      - "USB device not recognized"
+      - "overcurrent"
+      - "exceeded the power"
+      - "device descriptor request failed"
+      - "port reset failed"
+      - "unknown USB device"
+      - "hub port power"
+      - "WUDFRd failed to load"
+      - "USB device malfunction"
+  condition: selection
+
+---
+id: hw-pci-001
+title: PCI / PCIe Bus Error
+description: >
+  PCI/PCIe device reported a bus error. Scoped to PCI, WHEA, and
+  AER event sources. PREVIOUSLY BROKEN: fired on EID 27 from the
+  storage subsystem (NVMe disk discovery) because the rule matched
+  broad keywords like 'slot' and 'correctable error' with no source
+  validation. Normal disk enumeration logged as a high-severity
+  hardware bus error.
+level: high
+author: BeanFeasa
+tags:
+  - hardware.pci
+  - bus.error
+detection:
+  pci_source:
+    source|contains:
+      - "Microsoft-Windows-PCI"
+      - "pci"
+      - "WHEA-Logger"
+    message|contains:
+      - "bus error"
+      - "ECRC"
+      - "completion timeout"
+      - "AER"
+      - "Advanced Error Reporting"
+      - "correctable error"
+      - "uncorrectable error"
+  filter_storage:
+    source|contains:
+      - "storahci"
+      - "stornvme"
+      - "disk"
+      - "Ntfs"
+      - "Microsoft-Windows-Disk"
+      - "Microsoft-Windows-StorPort"
+  condition: pci_source and not filter_storage
+---
+id: hw-whea-001
+title: WHEA Uncorrectable Error (Event 18, 19, 20)
+description: >
+  Windows Hardware Error Architecture has logged a fatal or
+  uncorrectable hardware error. Typically results in BSOD.
+level: critical
+author: BeanFeasa
+tags:
+  - hardware.whea
+  - fatal
+detection:
+  selection:
+    event_id|equals:
+      - "18"
+      - "19"
+      - "20"
+    source|contains:
+      - "WHEA"
+  condition: selection
+
+---
+id: hw-whea-002
+title: WHEA Correctable Error (Event 17)
+description: >
+  A corrected hardware error was logged by WHEA. While non-fatal,
+  frequent corrected errors often precede failure.
+level: medium
+author: BeanFeasa
+tags:
+  - hardware.whea
+  - correctable
+detection:
+  selection:
+    event_id|equals:
+      - "17"
+    source|contains:
+      - "WHEA"
+  condition: selection

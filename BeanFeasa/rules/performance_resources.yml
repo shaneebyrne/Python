@@ -1,0 +1,407 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Performance & Resources
+# Covers: Memory exhaustion, CPU saturation,
+#         Disk space, Handle/thread leaks, Pool
+#         exhaustion, Pagefile, Process crashes,
+#         Event log overflow, Print spooler
+# ────────────────────────────────────────────────
+
+---
+id: perf-mem-001
+title: Low Memory / Memory Exhaustion
+description: >
+  System is running critically low on physical or virtual memory.
+  Applications may fail to allocate memory.
+level: high
+author: BeanFeasa
+tags:
+  - performance.memory
+  - resource.exhaustion
+detection:
+  selection:
+    message|contains:
+      - "low on memory"
+      - "out of memory"
+      - "memory exhaustion"
+      - "insufficient memory"
+      - "commit limit"
+      - "memory pressure"
+      - "oom-killer"
+      - "Cannot allocate memory"
+      - "insufficient system resources"
+  condition: selection
+
+---
+id: perf-mem-002
+title: Resource Exhaustion Warning (Event 2004)
+description: >
+  Windows Resource Exhaustion Detector has flagged low resources.
+  Event 2004 = virtual memory running low.
+level: high
+author: BeanFeasa
+tags:
+  - performance.memory
+  - resource.warning
+detection:
+  selection:
+    event_id|equals:
+      - "2004"
+    source|contains:
+      - "Resource-Exhaustion"
+      - "srv"
+  condition: selection
+
+---
+id: perf-mem-003
+title: Nonpaged / Paged Pool Exhaustion
+description: >
+  Kernel pool memory (nonpaged or paged) is exhausted. Can cause
+  system instability and BSOD.
+level: critical
+author: BeanFeasa
+tags:
+  - performance.kernel
+  - pool.exhaustion
+detection:
+  selection:
+    message|contains:
+      - "nonpaged pool"
+      - "paged pool"
+      - "pool allocation"
+      - "pool tag"
+      - "pool exhaustion"
+      - "ran out of pool"
+      - "system PTE"
+  condition: selection
+
+---
+id: perf-mem-004
+title: Pagefile Usage Critical
+description: >
+  Pagefile utilization has reached critical levels or the system
+  has failed to extend the pagefile.
+level: high
+author: BeanFeasa
+tags:
+  - performance.pagefile
+  - virtual.memory
+detection:
+  selection:
+    message|contains:
+      - "pagefile"
+      - "page file"
+      - "paging file"
+      - "swap"
+      - "swappiness"
+      - "swap space"
+  condition: selection
+
+---
+id: perf-cpu-001
+title: Sustained High CPU Usage
+description: >
+  A process or the system overall has been consuming excessive CPU
+  resources for an extended period.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.cpu
+  - resource
+detection:
+  selection:
+    message|contains:
+      - "high CPU"
+      - "CPU usage"
+      - "processor time"
+      - "100% CPU"
+      - "CPU spike"
+      - "runaway process"
+      - "hung process"
+  condition: selection
+
+---
+id: perf-disk-001
+title: Low Disk Space Warning
+description: >
+  A volume is running critically low on free disk space. May impact
+  system stability, updates, and logging.
+level: high
+author: BeanFeasa
+tags:
+  - performance.disk
+  - disk.space
+detection:
+  selection:
+    message|contains:
+      - "low disk space"
+      - "disk full"
+      - "out of disk"
+      - "no space left"
+      - "insufficient disk"
+      - "disk space"
+      - "ENOSPC"
+      - "volume is full"
+  condition: selection
+
+---
+id: perf-disk-002
+title: Disk Performance Degradation / High Latency
+description: >
+  Disk I/O latency has exceeded acceptable thresholds, indicating
+  storage bottleneck or hardware degradation.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.disk
+  - io.latency
+detection:
+  selection:
+    message|contains:
+      - "disk latency"
+      - "IO latency"
+      - "high latency"
+      - "slow I/O"
+      - "disk queue"
+      - "avg. disk"
+      - "StorDiag"
+  condition: selection
+
+---
+id: perf-handle-001
+title: Handle / Thread Leak Indicator
+description: >
+  A process has accumulated an abnormally high number of handles
+  or threads, indicating a resource leak.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.leak
+  - handles
+detection:
+  selection:
+    message|contains:
+      - "handle count"
+      - "handle leak"
+      - "thread count"
+      - "thread leak"
+      - "GDI objects"
+      - "USER objects"
+      - "handle limit"
+      - "desktop heap"
+  condition: selection
+
+---
+id: perf-log-001
+title: Event Log Full / Overflow (Event 1104, 1105)
+description: >
+  An event log channel has reached capacity. New events may be
+  lost until the log is cleared or expanded.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.logging
+  - event.log
+detection:
+  selection:
+    event_id|equals:
+      - "1104"
+      - "1105"
+  condition: selection
+
+---
+id: perf-log-002
+title: Event Log Service Error / Log Full
+description: >
+  The Event Log service has encountered errors or a log is full.
+  PREVIOUSLY BROKEN: fired on EID 6005 (Event Log service started —
+  a clean post-boot success event) because the rule matched on
+  'EventLog' in the message with no severity filter.
+  Fix: require error-level messages and exclude EID 6005 (start success).
+  EID 6005 + prior EID 6008 (unexpected shutdown) is handled by chain-lockup.
+level: high
+author: BeanFeasa
+tags:
+  - performance.logging
+  - eventlog
+detection:
+  log_error:
+    source|contains:
+      - "EventLog"
+      - "Microsoft-Windows-Eventlog"
+    message|contains:
+      - "log file is full"
+      - "maximum log size"
+      - "log file corrupt"
+      - "logging stopped"
+      - "failed to write"
+      - "cannot be opened"
+  filter_start_event:
+    event_id|equals:
+      - "6005"
+      - "6006"
+      - "6009"
+  condition: log_error and not filter_start_event
+---
+id: perf-print-001
+title: Print Spooler Error / Crash
+description: >
+  The Print Spooler service has crashed or encountered an error.
+  HttpService URL group management events (EIDs 111/112/113/114/117)
+  are excluded — these are normal WSD print listener URL reservation
+  operations that appear even during healthy print spooler operation.
+  The executable path in HttpService messages contains 'spoolsv.exe'
+  which previously matched the keyword filter on every boot cycle.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.print
+  - spooler
+detection:
+  spooler_crash:
+    event_id|equals:
+      - "7031"
+      - "7034"
+    source|contains:
+      - "Service Control Manager"
+    message|contains:
+      - "Print Spooler"
+      - "Spooler"
+  spooler_faulting:
+    event_id|equals:
+      - "1000"
+      - "1001"
+    source|contains:
+      - "Application Error"
+      - "Windows Error Reporting"
+    message|contains:
+      - "spoolsv.exe"
+  filter_http_service:
+    source|contains:
+      - "Microsoft-Windows-HttpService"
+      - "HttpService"
+  condition: (spooler_crash or spooler_faulting) and not filter_http_service
+---
+id: perf-gpo-001
+title: Group Policy Processing Failure (Event 1085, 1125, 1129)
+description: >
+  Group Policy processing has failed, which can result in
+  misconfigured security settings and missing drive maps.
+level: high
+author: BeanFeasa
+tags:
+  - performance.gpo
+  - policy
+detection:
+  selection:
+    event_id|equals:
+      - "1085"
+      - "1125"
+      - "1126"
+      - "1129"
+    source|contains:
+      - "GroupPolicy"
+      - "Group Policy"
+  condition: selection
+
+---
+id: perf-gpo-002
+title: Group Policy Error Indicators
+description: >
+  Generic Group Policy error keywords in log messages.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.gpo
+  - policy
+detection:
+  selection:
+    message|contains:
+      - "Group Policy"
+      - "GPO"
+      - "gpsvc"
+      - "policy processing"
+      - "policy application"
+      - "failed to apply"
+      - "SYSVOL"
+  condition: selection
+
+---
+id: perf-boot-001
+title: Slow Boot / Shutdown Detected
+description: >
+  System boot or shutdown took abnormally long, indicating driver,
+  service, or hardware issues. Scoped to boot performance event sources
+  (Diagnostics-Performance, Winlogon, User32 shutdown).
+  PREVIOUSLY BROKEN: fired on Security EID 4624 (account logon success)
+  because 'Winlogon' appeared in some logon event messages as the
+  calling process. Fix: require boot performance sources/channels.
+level: low
+author: BeanFeasa
+tags:
+  - performance.boot
+  - startup
+detection:
+  boot_perf_source:
+    source|contains:
+      - "Microsoft-Windows-Diagnostics-Performance"
+      - "Microsoft-Windows-Winlogon"
+    message|contains:
+      - "boot time"
+      - "boot performance"
+      - "boot degradation"
+      - "slow boot"
+      - "shutdown time"
+      - "startup"
+      - "degraded"
+  filter_logon:
+    event_id|equals:
+      - "4624"
+      - "4625"
+      - "4634"
+      - "4647"
+    source|contains:
+      - "Microsoft-Windows-Security-Auditing"
+  condition: boot_perf_source and not filter_logon
+---
+id: perf-shutdown-001
+title: Unexpected Shutdown / Restart Reason
+description: >
+  System shutdown or restart was initiated with a recorded reason
+  code. Tracks planned vs unplanned restarts.
+level: low
+author: BeanFeasa
+tags:
+  - performance.shutdown
+  - restart
+detection:
+  selection:
+    event_id|equals:
+      - "1074"
+      - "6006"
+      - "6008"
+    source|contains:
+      - "User32"
+      - "EventLog"
+  condition: selection
+
+---
+id: perf-linux-oom-001
+title: Linux OOM Killer Activated
+description: >
+  The Linux OOM (Out of Memory) killer has terminated a process
+  to free memory. System was critically low on RAM.
+level: critical
+author: BeanFeasa
+tags:
+  - performance.linux
+  - oom
+detection:
+  selection:
+    message|contains:
+      - "Out of memory"
+      - "oom-kill"
+      - "oom_kill"
+      - "Killed process"
+      - "invoked oom-killer"
+      - "oom_score"
+  condition: selection

@@ -1,0 +1,605 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Software Failures
+# Covers: Application crashes, BSOD/Bugcheck,
+#         Service failures, Driver errors, Windows
+#         Update, .NET/Runtime, WMI, COM, Installer
+#
+# v2 changes (post USVIS-952KC14):
+#   sw-drv-002 — Scoped to SCM + Kernel-PnP event IDs only.
+#                Removed keyword matching that was hitting Event 1000
+#                crash records (~234 false positives eliminated).
+#   sw-bsod-003 — Added filter block for LONG_POWER_PRESS.
+#                 LPBH live dumps are now informational, not GPU crashes.
+#   lsass-restart-001 — NEW: wininit Event 1074 with lsass comment.
+#   bsod-lpbh-001 — NEW: Power button hold live dumps (informational).
+# ────────────────────────────────────────────────
+
+---
+id: sw-crash-001
+title: Application Crash (Event 1000)
+description: >
+  Application Error event — a user-mode application has crashed.
+  Includes faulting module and exception code.
+level: medium
+author: BeanFeasa
+tags:
+  - software.crash
+  - application.error
+detection:
+  selection:
+    event_id|equals:
+      - "1000"
+    source|contains:
+      - "Application Error"
+  condition: selection
+
+---
+id: sw-crash-002
+title: Application Hang (Event 1002)
+description: >
+  Application Hang event — an application stopped responding and
+  was terminated or recovered by Windows.
+level: medium
+author: BeanFeasa
+tags:
+  - software.crash
+  - application.hang
+detection:
+  selection:
+    event_id|equals:
+      - "1002"
+    source|contains:
+      - "Application Hang"
+  condition: selection
+
+---
+id: sw-crash-003
+title: Windows Error Reporting (Event 1001)
+description: >
+  WER has captured a crash bucket. Contains fault bucket parameters
+  useful for identifying recurring crash patterns.
+level: low
+author: BeanFeasa
+tags:
+  - software.crash
+  - wer
+detection:
+  selection:
+    event_id|equals:
+      - "1001"
+    source|contains:
+      - "Windows Error Reporting"
+  condition: selection
+
+---
+id: sw-crash-004
+title: Application Crash Indicators in Logs
+description: >
+  Generic detection of crash-related keywords across any log source.
+level: medium
+author: BeanFeasa
+tags:
+  - software.crash
+  - generic
+detection:
+  selection:
+    message|contains:
+      - "unhandled exception"
+      - "access violation"
+      - "segmentation fault"
+      - "segfault"
+      - "SIGSEGV"
+      - "SIGABRT"
+      - "core dumped"
+      - "fatal error"
+      - "abort()"
+      - "stack overflow"
+      - "null pointer"
+      - "NullReferenceException"
+      - "OutOfMemoryException"
+  condition: selection
+
+---
+id: sw-bsod-001
+title: BSOD / Bugcheck (Event 41, 1001)
+description: >
+  System crashed with a blue screen (bugcheck). Event 41 = Kernel-Power
+  unexpected shutdown, Event 1001 = BugCheck report.
+level: critical
+author: BeanFeasa
+tags:
+  - software.bsod
+  - bugcheck
+  - critical
+detection:
+  selection:
+    message|contains:
+      - "BugCheck"
+      - "bugcheck"
+      - "Blue Screen"
+      - "BSOD"
+      - "stop error"
+      - "CRITICAL_PROCESS_DIED"
+      - "SYSTEM_SERVICE_EXCEPTION"
+      - "IRQL_NOT_LESS_OR_EQUAL"
+      - "PAGE_FAULT_IN_NONPAGED_AREA"
+      - "KERNEL_DATA_INPAGE_ERROR"
+      - "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED"
+      - "KMODE_EXCEPTION_NOT_HANDLED"
+      - "DPC_WATCHDOG_VIOLATION"
+      - "WHEA_UNCORRECTABLE_ERROR"
+      - "VIDEO_TDR_FAILURE"
+      - "DRIVER_IRQL_NOT_LESS_OR_EQUAL"
+      - "UNEXPECTED_KERNEL_MODE_TRAP"
+      - "KERNEL_SECURITY_CHECK_FAILURE"
+      - "BAD_POOL_HEADER"
+  condition: selection
+
+---
+id: sw-bsod-002
+title: Unexpected Shutdown / Kernel Power 41
+description: >
+  The system rebooted without cleanly shutting down. Classic indicator
+  of BSOD, power loss, or watchdog timeout.
+level: high
+author: BeanFeasa
+tags:
+  - software.bsod
+  - kernel.power
+detection:
+  selection:
+    event_id|equals:
+      - "41"
+    source|contains:
+      - "Kernel-Power"
+  condition: selection
+
+---
+id: sw-bsod-003
+title: Watchdog Timeout / DPC Violation
+description: >
+  A kernel watchdog or DPC timeout occurred, typically caused by a
+  misbehaving driver or extreme system load.
+  NOTE: LONG_POWER_PRESS_HALT events (user held power button) are
+  explicitly excluded — they are handled as informational by bsod-lpbh-001.
+  VSS Event 8224 'idle timeout' is normal service shutdown and is excluded.
+level: high
+author: BeanFeasa
+tags:
+  - software.watchdog
+  - driver
+detection:
+  selection:
+    message|contains:
+      - "DPC watchdog"
+      - "DPC routine"
+      - "DPC_WATCHDOG_VIOLATION"
+      - "StorPort miniport"
+      - "watchdog timeout"
+      - "VIDEO_TDR"
+      - "0x00000116"
+      - "0x00000117"
+  filter:
+    message|contains:
+      - "LONG_POWER_PRESS"
+  condition: selection and not filter
+
+---
+id: bsod-lpbh-001
+title: Power Button Hold — Live Dump (Not a Crash)
+description: >
+  BugCheck codes 0x1A8 / 0x1B8 with FAILURE_BUCKET_ID 'LONG_POWER_PRESS'
+  are diagnostic live dumps generated when the user holds the power button
+  for 7+ seconds. They are NOT crashes. Without this rule, sw-bsod-003
+  misclassifies these as GPU crashes (false primary finding).
+  Previously: 44 LPBH dumps misclassified as GPU TDR failures on USVIS-952KC14.
+level: informational
+author: BeanFeasa
+tags:
+  - software.bsod
+  - bsod.lpbh
+  - user_initiated
+detection:
+  wer_event:
+    event_id|equals:
+      - "1001"
+    source|contains:
+      - "Windows Error Reporting"
+  lpbh_marker:
+    message|contains:
+      - "LONG_POWER_PRESS"
+  condition: wer_event and lpbh_marker
+---
+id: lsass-restart-001
+title: lsass-Induced System Restart (wininit Event 1074)
+description: >
+  wininit.exe logs Event 1074 with lsass.exe in the comment field for
+  every lsass-induced restart (reason code 0x50006). This is definitive
+  proof of lsass-caused shutdown and fires independently of any dump.
+  Previously undetected in USVIS-952KC14 — would have identified the
+  reboot cause without requiring WinDbg analysis.
+level: critical
+author: BeanFeasa
+tags:
+  - software.lsass
+  - lsass.induced.restart
+  - credential_subsystem
+detection:
+  selection:
+    event_id|equals:
+      - "1074"
+    source|contains:
+      - "User32"
+  lsass_marker:
+    message|contains:
+      - "lsass.exe"
+  condition: selection and lsass_marker
+
+---
+id: sw-svc-001
+title: Service Crashed / Terminated Unexpectedly (Event 7031, 7034)
+description: >
+  A Windows service terminated unexpectedly (7034) or the SCM is
+  taking corrective action (7031).
+level: high
+author: BeanFeasa
+tags:
+  - software.service
+  - service.crash
+detection:
+  selection:
+    event_id|equals:
+      - "7031"
+      - "7034"
+    source|contains:
+      - "Service Control Manager"
+  condition: selection
+
+---
+id: sw-svc-002
+title: Service Failed to Start (Event 7000, 7009, 7023)
+description: >
+  A service failed to start (7000), timed out (7009), or terminated
+  with an error (7023).
+level: medium
+author: BeanFeasa
+tags:
+  - software.service
+  - service.failure
+detection:
+  selection:
+    event_id|equals:
+      - "7000"
+      - "7009"
+      - "7023"
+      - "7024"
+    source|contains:
+      - "Service Control Manager"
+  condition: selection
+
+---
+id: sw-svc-003
+title: Service Start Type Changed (Event 7040)
+description: >
+  A service's start type was changed. Could indicate legitimate
+  maintenance or unauthorized modification.
+level: low
+author: BeanFeasa
+tags:
+  - software.service
+  - service.config
+detection:
+  selection:
+    event_id|equals:
+      - "7040"
+    source|contains:
+      - "Service Control Manager"
+  condition: selection
+
+---
+id: sw-drv-001
+title: Driver Crash / Failed to Load (Event 7026)
+description: >
+  A boot-start or system-start driver failed to load. May indicate
+  driver corruption, incompatibility, or missing files.
+level: high
+author: BeanFeasa
+tags:
+  - software.driver
+  - driver.failure
+detection:
+  selection:
+    event_id|equals:
+      - "7026"
+    source|contains:
+      - "Service Control Manager"
+  condition: selection
+
+---
+id: sw-drv-002
+title: Driver Error / Service or PnP Failure
+description: >
+  Driver and service-layer failures from Service Control Manager and
+  Kernel-PnP. Scoped to specific event IDs and providers to prevent
+  false matches against application crash records (Event 1000).
+  Previously, keyword matching on crash report terminology caused
+  ~234 false positive events in USVIS-952KC14.
+  SCM: 7000/7009/7023/7034. Kernel-PnP: 219 (driver load failure).
+level: high
+author: BeanFeasa
+tags:
+  - software.driver
+  - kernel
+detection:
+  selection:
+    event_id|equals:
+      - "7000"
+      - "7009"
+      - "7023"
+      - "7034"
+      - "219"
+    source|contains:
+      - "Service Control Manager"
+      - "Kernel-PnP"
+  condition: selection
+
+---
+id: sw-drv-003
+title: Windows Driver Framework Error
+description: >
+  A WDF (KMDF/UMDF) driver has encountered an error or the
+  driver host process has crashed.
+level: medium
+author: BeanFeasa
+tags:
+  - software.driver
+  - wdf
+detection:
+  selection:
+    source|contains:
+      - "DriverFrameworks"
+      - "WudfHost"
+      - "UMDF"
+      - "KMDF"
+  condition: selection
+
+---
+id: sw-upd-001
+title: Windows Update Failure
+description: >
+  A Windows Update operation has failed. Only fires on actual
+  failure indicators — error codes and explicit failure messages.
+level: medium
+author: BeanFeasa
+tags:
+  - software.update
+  - windows.update
+detection:
+  selection:
+    message|contains:
+      - "update failed"
+      - "installation failure"
+      - "failed to install"
+      - "0x80070002"
+      - "0x80070003"
+      - "0x80240FFF"
+      - "0x8024000B"
+      - "0x80073D02"
+      - "0x800f0831"
+      - "0x800f081f"
+      - "failed to download"
+      - "update could not be installed"
+  condition: selection
+
+---
+id: sw-upd-002
+title: Windows Update Installation Events (Event 19, 20, 25)
+description: >
+  Event 19 = successful install, 20 = install failure, 25 = restart
+  required. Tracks update lifecycle.
+level: low
+author: BeanFeasa
+tags:
+  - software.update
+  - lifecycle
+detection:
+  selection:
+    event_id|equals:
+      - "19"
+      - "20"
+      - "25"
+    source|contains:
+      - "WindowsUpdateClient"
+  condition: selection
+
+---
+id: sw-net-001
+title: .NET / CLR Runtime Error
+description: >
+  .NET Common Language Runtime has encountered a fatal error or
+  unhandled exception. Restricted to actual error patterns.
+level: medium
+author: BeanFeasa
+tags:
+  - software.runtime
+  - dotnet
+detection:
+  selection:
+    message|contains:
+      - ".NET Runtime error"
+      - ".NET Runtime Event"
+      - "CLR exception"
+      - "mscorlib"
+      - "StackOverflowException"
+      - "ExecutionEngineException"
+      - "TypeInitializationException"
+      - "BadImageFormatException"
+      - "CLR fatal error"
+      - "Application: .NET"
+      - "FileLoadException"
+      - "clr.dll"
+      - "coreclr.dll"
+  condition: selection
+
+---
+id: sw-net-002
+title: .NET Runtime Error Event (Event 1026)
+description: >
+  .NET Runtime event 1026 — application termination due to unhandled
+  exception in a .NET application.
+level: medium
+author: BeanFeasa
+tags:
+  - software.runtime
+  - dotnet
+detection:
+  selection:
+    event_id|equals:
+      - "1026"
+    source|contains:
+      - ".NET Runtime"
+  condition: selection
+
+---
+id: sw-wmi-001
+title: WMI Error / Provider Failure (Event 10, 5858)
+description: >
+  WMI provider error or filter-to-consumer binding failure.
+level: low
+author: BeanFeasa
+tags:
+  - software.wmi
+  - management
+detection:
+  selection:
+    event_id|equals:
+      - "10"
+      - "5858"
+    source|contains:
+      - "WMI"
+      - "Microsoft-Windows-WMI"
+  condition: selection
+
+---
+id: sw-com-001
+title: COM / DCOM Error (Event 10010, 10016)
+description: >
+  A COM or DCOM server did not register or had permission errors.
+level: low
+author: BeanFeasa
+tags:
+  - software.com
+  - dcom
+detection:
+  selection:
+    event_id|equals:
+      - "10010"
+      - "10016"
+    source|contains:
+      - "DistributedCOM"
+      - "DCOM"
+  condition: selection
+
+---
+id: sw-install-001
+title: MSI Installer Failure
+description: >
+  A Windows Installer (MSI) operation has failed with a non-zero
+  error status. Event 1035 with "status: 0" is a SUCCESSFUL
+  reconfiguration and is excluded.
+level: medium
+author: BeanFeasa
+tags:
+  - software.installer
+  - msi
+detection:
+  selection:
+    message|contains:
+      - "installation failed"
+      - "reconfiguration failed"
+      - "error status: 1603"
+      - "error status: 1618"
+      - "error status: 1625"
+      - "error status: 1602"
+      - "error status: 1612"
+      - "Windows Installer requires a system restart"
+      - "MsiInstaller error"
+  condition: selection
+
+---
+id: sw-task-001
+title: Scheduled Task Failure (Event 101, 102, 111)
+description: >
+  A scheduled task has failed to execute (101), completed with
+  error (102), or failed to launch action (111).
+level: medium
+author: BeanFeasa
+tags:
+  - software.scheduler
+  - task.failure
+detection:
+  selection:
+    event_id|equals:
+      - "101"
+      - "102"
+      - "111"
+      - "329"
+    source|contains:
+      - "TaskScheduler"
+      - "Task Scheduler"
+  condition: selection
+
+---
+id: sw-time-001
+title: System Time Sync Failure
+description: >
+  Windows Time Service has lost synchronisation or cannot reach NTP.
+  Restricted to actual failure EIDs:
+    129 = NtpClient did not receive timely response (timeout)
+    134 = NtpClient cannot reach any time source
+    142 = Manual NTP sync failed
+  EID 37 ('NtpClient is currently receiving valid time data') is a
+  SUCCESS confirmation — not a failure. Previously incorrectly triggered
+  on every successful NTP sync with TempoDC2.
+  EID 158 (VMICTimeProvider) is handled by tempo-time-001 at informational.
+level: medium
+author: BeanFeasa
+tags:
+  - software.time
+  - ntp
+detection:
+  selection:
+    event_id|equals:
+      - "129"
+      - "134"
+      - "142"
+    source|contains:
+      - "W32Time"
+      - "Time-Service"
+  condition: selection
+
+---
+id: sw-bsod-dmp-module-001
+title: BSOD Faulting Driver Identified (Minidump Analysis)
+description: >
+  The minidump parser has identified the faulting driver from a crash
+  dump. This is a DMP-MOD event from 'Minidump Analysis' source —
+  the highest-confidence BSOD root cause identification available
+  without a WinDbg session.
+  On RICHLT: tcpip.sys (NDIS callout) with sntp.sys (Sophos NTP driver)
+  suspected as the initiating driver. Run SophosZap to remove.
+  Previously: these events were incorrectly caught by net-krb-002
+  and labelled 'Kerberos Protocol Error'.
+level: critical
+author: BeanFeasa
+tags:
+  - software.bsod
+  - bsod.driver.identified
+  - minidump
+detection:
+  selection:
+    event_id|equals:
+      - "DMP-MOD"
+    source|equals:
+      - "Minidump Analysis"
+  condition: selection

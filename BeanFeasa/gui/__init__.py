@@ -1,0 +1,1 @@
+"""BeanFeasa — GUI package."""

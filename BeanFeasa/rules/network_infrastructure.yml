@@ -1,0 +1,389 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Network Infrastructure
+# Covers: DNS, DHCP, WiFi, VPN, TCP/IP, SMB,
+#         Kerberos, LDAP, NTP, proxy, certificates
+#
+# v2 changes (post USVIS-952KC14):
+#   net-krb-002 — Scoped to Microsoft-Windows-Security-Kerberos provider
+#                 + specific event IDs. Removed broad keyword matching on
+#                 hex values ("0x6", "0x17" etc.) and "4096" which was
+#                 matching VBScript deprecation alerts and lsass crash records
+#                 (~213 false positives eliminated).
+# ────────────────────────────────────────────────
+
+---
+id: net-dns-001
+title: DNS Resolution Failure
+description: >
+  DNS resolution has failed for one or more queries.
+level: medium
+author: BeanFeasa
+tags:
+  - network.dns
+  - resolution
+detection:
+  selection:
+    message|contains:
+      - "DNS"
+      - "name resolution"
+      - "NXDOMAIN"
+      - "SERVFAIL"
+      - "could not resolve"
+      - "DNS server"
+      - "no such host"
+      - "getaddrinfo"
+      - "DNS_PROBE_FINISHED"
+      - "DNS resolution failed"
+  condition: selection
+
+---
+id: net-dns-002
+title: DNS Server Error (Event 4013, 4015, 7062)
+description: >
+  DNS Server service has encountered errors — zone load failure,
+  timeout, or database error.
+level: high
+author: BeanFeasa
+tags:
+  - network.dns
+  - dns.server
+detection:
+  selection:
+    event_id|equals:
+      - "4013"
+      - "4015"
+      - "7062"
+    source|contains:
+      - "DNS"
+  condition: selection
+
+---
+id: net-dhcp-001
+title: DHCP Failure / Address Conflict
+description: >
+  DHCP client has failed to obtain or renew an IP address, or
+  an address conflict has been detected on the network.
+level: medium
+author: BeanFeasa
+tags:
+  - network.dhcp
+  - addressing
+detection:
+  selection:
+    message|contains:
+      - "address conflict"
+      - "duplicate IP"
+      - "APIPA"
+      - "169.254"
+      - "could not obtain"
+      - "lease expired"
+      - "no DHCP server"
+      - "failed to obtain"
+      - "DHCP failure"
+      - "Dhcp-Client"
+  condition: selection
+
+---
+id: net-dhcp-002
+title: DHCP Client Warning (Event 1002, 1003)
+description: >
+  DHCP client events indicating lease problems.
+level: medium
+author: BeanFeasa
+tags:
+  - network.dhcp
+  - client
+detection:
+  selection:
+    event_id|equals:
+      - "1002"
+      - "1003"
+    source|contains:
+      - "Dhcp"
+      - "DHCP"
+  condition: selection
+
+---
+id: net-wifi-001
+title: WiFi Disconnection / Authentication Failure
+description: >
+  Wireless network connection dropped, authentication failed, or
+  association was rejected. Auto-suppressed on wired-only devices
+  by device context.
+level: medium
+author: BeanFeasa
+tags:
+  - network.wifi
+  - wireless
+detection:
+  selection:
+    message|contains:
+      - "disassociated"
+      - "deauthenticated"
+      - "authentication failed"
+      - "association failed"
+      - "WLAN connection failed"
+      - "wireless network not available"
+      - "reason code"
+  condition: selection
+
+---
+id: net-wifi-002
+title: WiFi Adapter Event (Event 8002, 8003)
+description: >
+  WLAN AutoConfig events. 8002 = failed connection, 8003 = disconnected.
+level: medium
+author: BeanFeasa
+tags:
+  - network.wifi
+  - wlan
+detection:
+  selection:
+    event_id|equals:
+      - "8002"
+      - "8003"
+    source|contains:
+      - "WLAN"
+      - "Microsoft-Windows-WLAN"
+  condition: selection
+
+---
+id: net-vpn-001
+title: VPN Connection Failure
+description: >
+  A VPN connection attempt has failed — authentication error, timeout,
+  or protocol mismatch. Restricted to actual VPN failure events.
+level: medium
+author: BeanFeasa
+tags:
+  - network.vpn
+  - remote.access
+detection:
+  selection:
+    message|contains:
+      - "VPN connection failed"
+      - "VPN tunnel"
+      - "RasClient error"
+      - "VPN authentication failed"
+      - "remote access connection"
+      - "VPN disconnected"
+      - "IKE negotiation failed"
+      - "VPN error"
+  condition: selection
+
+---
+id: net-vpn-002
+title: RAS / VPN Error Events (Event 20227, 20209)
+description: >
+  Remote Access Service connection events indicating failure.
+level: medium
+author: BeanFeasa
+tags:
+  - network.vpn
+  - ras
+detection:
+  selection:
+    event_id|equals:
+      - "20209"
+      - "20227"
+    source|contains:
+      - "RasClient"
+      - "RemoteAccess"
+  condition: selection
+
+---
+id: net-tcp-001
+title: TCP Connection Reset / Timeout Flood
+description: >
+  High volume of TCP resets or connection timeouts indicating network
+  instability, firewall issues, or application problems.
+level: medium
+author: BeanFeasa
+tags:
+  - network.tcp
+  - connectivity
+detection:
+  selection:
+    message|contains:
+      - "TCP connection reset"
+      - "connection refused"
+      - "connection timed out"
+      - "ECONNREFUSED"
+      - "ECONNRESET"
+      - "ETIMEDOUT"
+      - "TCP retransmission"
+      - "TCP/IP connection limit"
+  condition: selection
+
+---
+id: net-smb-001
+title: SMB / File Share Failure
+description: >
+  SMB file share access has failed — authentication, permission,
+  or network connectivity issues.
+level: medium
+author: BeanFeasa
+tags:
+  - network.smb
+  - fileshare
+detection:
+  selection:
+    message|contains:
+      - "SMB"
+      - "file share"
+      - "network path"
+      - "network name"
+      - "0x80070035"
+      - "not found"
+      - "access denied"
+      - "The specified network name"
+      - "Redirector"
+      - "LanmanWorkstation"
+      - "mrxsmb"
+  condition: selection
+
+---
+id: net-krb-001
+title: Kerberos Authentication Failure (Event 4771)
+description: >
+  Kerberos pre-authentication failed. May indicate wrong password,
+  account lockout, clock skew, or encryption mismatch.
+level: medium
+author: BeanFeasa
+tags:
+  - network.kerberos
+  - authentication
+detection:
+  selection:
+    event_id|equals:
+      - "4771"
+  condition: selection
+
+---
+id: net-krb-002
+title: Kerberos Protocol Error
+description: >
+  Genuine Kerberos authentication error from the Security-Kerberos provider.
+  Restricted to Kerberos-specific sources and event IDs.
+  DMP-MOD events from the minidump parser ('Minidump Analysis' source)
+  are explicitly excluded — faulting module data from crash dumps must
+  be handled by sw-bsod-dmp-module-001, not this rule.
+  History:
+    v1: fired on NTP EID 37, NIC EID 27, Credential Guard EID 14
+    v2: those fixed but DMP-MOD events now caught (faulting module
+        data labelled 'Kerberos Protocol Error' — wrong)
+    v3: DMP-MOD explicitly excluded; .NET Runtime EID 1022 excluded.
+level: high
+author: BeanFeasa
+tags:
+  - network.kerberos
+  - kdc
+detection:
+  kerberos_provider:
+    event_id|equals:
+      - "4"
+      - "40"
+    source|equals:
+      - "Microsoft-Windows-Security-Kerberos"
+  kerberos_audit:
+    event_id|equals:
+      - "4771"
+    source|contains:
+      - "Microsoft-Windows-Security-Auditing"
+  kerberos_unambiguous:
+    message|contains:
+      - "KDC_ERR_C_PRINCIPAL_UNKNOWN"
+      - "KDC_ERR_PREAUTH_FAILED"
+      - "KRB_AP_ERR_SKEW"
+      - "clock skew too great"
+    source|contains:
+      - "Microsoft-Windows-Security-Kerberos"
+      - "Microsoft-Windows-Security-Auditing"
+  filter_dmp:
+    source|contains:
+      - "Minidump Analysis"
+  filter_dotnet:
+    source|contains:
+      - ".NET Runtime"
+      - "Application Error"
+  filter_ntp:
+    source|contains:
+      - "W32Time"
+      - "Time-Service"
+  condition: (kerberos_provider or kerberos_audit or kerberos_unambiguous) and not (filter_dmp or filter_dotnet or filter_ntp)
+---
+id: net-ldap-001
+title: LDAP Connection Error
+description: >
+  LDAP/LDAPS connection failure to a domain controller. Impacts
+  authentication, group policy, and directory queries.
+  Auto-suppressed on WORKGROUP devices by device context.
+level: high
+author: BeanFeasa
+tags:
+  - network.ldap
+  - directory
+detection:
+  selection:
+    message|contains:
+      - "LDAP connection failed"
+      - "LDAP bind failed"
+      - "LDAP server unavailable"
+      - "LDAP error"
+      - "directory service error"
+      - "LDAP timeout"
+      - "NTDS"
+  condition: selection
+
+---
+id: net-cert-001
+title: Certificate Error / Expiration
+description: >
+  A TLS/SSL certificate has expired, is untrusted, or the chain
+  is incomplete.
+level: high
+author: BeanFeasa
+tags:
+  - network.certificate
+  - tls
+detection:
+  selection:
+    message|contains:
+      - "certificate"
+      - "expired"
+      - "certificate error"
+      - "certificate revoked"
+      - "certificate chain"
+      - "untrusted"
+      - "CERT_E_"
+      - "SSL"
+      - "TLS"
+      - "SChannel"
+      - "SCHANNEL"
+      - "certificate has expired"
+  condition: selection
+
+---
+id: net-cert-002
+title: SChannel / TLS Error (Event 36870, 36871, 36874)
+description: >
+  SChannel (Windows TLS provider) errors indicating handshake failures,
+  cipher mismatch, or certificate problems.
+level: high
+author: BeanFeasa
+tags:
+  - network.tls
+  - schannel
+detection:
+  selection:
+    event_id|equals:
+      - "36870"
+      - "36871"
+      - "36872"
+      - "36874"
+      - "36887"
+      - "36888"
+    source|contains:
+      - "Schannel"
+      - "SChannel"
+  condition: selection

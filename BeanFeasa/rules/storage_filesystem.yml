@@ -1,0 +1,322 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Storage & Filesystem
+# Covers: NTFS, ReFS, RAID, Volume Shadow Copy,
+#         BitLocker, chkdsk, filesystem corruption,
+#         Storage Spaces, iSCSI, deduplication
+# ────────────────────────────────────────────────
+
+---
+id: stor-ntfs-001
+title: NTFS Filesystem Error (Event 55, 137)
+description: >
+  NTFS has detected corruption on a volume. Event 55 = corrupt structure,
+  137 = delayed write failed. NOTE: Event 98 is a post-crash recovery
+  notification (not corruption) and is handled separately.
+level: critical
+author: BeanFeasa
+tags:
+  - storage.ntfs
+  - filesystem.corruption
+detection:
+  selection:
+    event_id|equals:
+      - "55"
+      - "137"
+    source|contains:
+      - "Ntfs"
+      - "NTFS"
+  condition: selection
+
+---
+id: stor-ntfs-002
+title: NTFS Corruption Indicators
+description: >
+  NTFS filesystem corruption detected in log messages.
+  NOTE: Event 98 (post-crash recovery) is handled separately by
+  eval-ntfs-001. This rule targets actual corruption indicators.
+level: high
+author: BeanFeasa
+tags:
+  - storage.ntfs
+  - filesystem.corruption
+detection:
+  selection:
+    message|contains:
+      - "file system structure on the disk is corrupt"
+      - "master file table is corrupt"
+      - "index entry is corrupt"
+      - "file record segment is unreadable"
+      - "volume is dirty"
+      - "delayed write failed"
+      - "NTFS detected corruption"
+      - "chkdsk /r"
+  condition: selection
+
+---
+id: stor-refs-001
+title: ReFS Filesystem Error
+description: >
+  ReFS (Resilient File System) has detected integrity errors or
+  attempted automatic repair.
+level: high
+author: BeanFeasa
+tags:
+  - storage.refs
+  - filesystem
+detection:
+  selection:
+    message|contains:
+      - "ReFS"
+      - "integrity stream"
+      - "checksum mismatch"
+      - "ReFS error"
+      - "Resilient File System"
+  condition: selection
+
+---
+id: stor-raid-001
+title: RAID Degraded / Rebuild Event
+description: >
+  A RAID array has become degraded, lost a member, or is rebuilding.
+  Scoped to storage-specific sources to prevent false matches against
+  fault bucket records in the Application log that include RAID-adjacent
+  terminology. Previously generated 4 likely false positives in
+  USVIS-952KC14 from fault bucket entries for process crashes.
+level: critical
+author: BeanFeasa
+tags:
+  - storage.raid
+  - redundancy
+detection:
+  raid_sources:
+    source|contains:
+      - "StorageSpaces"
+      - "SpacePort"
+      - "storahci"
+      - "stornvme"
+      - "disk"
+      - "mdadm"
+  raid_keywords:
+    message|contains:
+      - "RAID"
+      - "degraded"
+      - "failed member"
+      - "resync"
+      - "rebuild"
+      - "redundancy lost"
+      - "mdadm"
+      - "disk in the array"
+  condition: raid_sources and raid_keywords
+
+---
+id: stor-vss-001
+title: Volume Shadow Copy Failure (Event 12289, 12291, 8193)
+description: >
+  Volume Shadow Copy (VSS) operation has failed. Impacts backups,
+  System Restore, and snapshot-based recovery.
+level: high
+author: BeanFeasa
+tags:
+  - storage.vss
+  - backup.failure
+detection:
+  selection:
+    event_id|equals:
+      - "8193"
+      - "12289"
+      - "12291"
+      - "12298"
+    source|contains:
+      - "VSS"
+      - "VolSnap"
+  condition: selection
+
+---
+id: stor-vss-002
+title: VSS Writer Failure
+description: >
+  A VSS writer has failed, preventing consistent snapshots of a
+  particular application or service.
+level: medium
+author: BeanFeasa
+tags:
+  - storage.vss
+  - vss.writer
+detection:
+  selection:
+    message|contains:
+      - "VSS writer"
+      - "writer failed"
+      - "shadow copy"
+      - "VSS error"
+      - "Volume Shadow Copy"
+      - "VolSnap"
+      - "writer timed out"
+  condition: selection
+
+---
+id: stor-bl-001
+title: BitLocker Error / Recovery Event
+description: >
+  BitLocker has encountered an error, entered recovery mode, or
+  reported a key protector issue. Excludes Kernel-Boot Event 27
+  messages where "cannot be found" indicates a missing message DLL
+  (not BitLocker activity) and TPM provisioning success messages.
+level: critical
+author: BeanFeasa
+tags:
+  - storage.bitlocker
+  - encryption
+detection:
+  bitlocker_source:
+    source|contains:
+      - "BitLocker"
+      - "Microsoft-Windows-BitLocker"
+  bitlocker_message:
+    message|contains:
+      - "recovery mode"
+      - "recovery key"
+      - "encryption error"
+      - "FVE"
+      - "protector"
+      - "unlock"
+  filter:
+    message|contains:
+      - "cannot be found"
+      - "TPM was successfully provisioned"
+      - "No message file was found"
+  condition: (bitlocker_source or bitlocker_message) and not filter
+---
+id: stor-chkdsk-001
+title: Chkdsk Results / Filesystem Repair
+description: >
+  Chkdsk has run and found filesystem errors. Scoped to Chkdsk and
+  NTFS sources with specific repair keywords.
+  PREVIOUSLY BROKEN: fired on Wininit EID 15 (Credential Guard not
+  running) and VBScriptDeprecationAlert events. Wininit EID 15 is a
+  security feature status event with no filesystem relationship.
+  Fix: require chkdsk-specific source AND repair-specific message content,
+  with explicit filter for Credential Guard events.
+level: medium
+author: BeanFeasa
+tags:
+  - storage.chkdsk
+  - filesystem.repair
+detection:
+  chkdsk_source:
+    source|contains:
+      - "Microsoft-Windows-Chkdsk"
+      - "Chkdsk"
+  chkdsk_message:
+    message|contains:
+      - "chkdsk"
+      - "checking file system"
+      - "found errors"
+      - "correcting errors"
+      - "bad clusters"
+      - "recovering orphaned"
+      - "file system check complete"
+  filter_credential_guard:
+    source|contains:
+      - "Wininit"
+    message|contains:
+      - "Credential Guard"
+      - "Device Guard"
+      - "Isolated"
+  filter_vbscript:
+    source|contains:
+      - "VBScriptDeprecationAlert"
+  condition: (chkdsk_source and chkdsk_message) and not (filter_credential_guard or filter_vbscript)
+---
+id: stor-space-001
+title: Storage Spaces / Pool Error
+description: >
+  Windows Storage Spaces has detected a pool degradation, disk
+  retirement, or allocation failure.
+level: high
+author: BeanFeasa
+tags:
+  - storage.spaces
+  - pool
+detection:
+  selection:
+    message|contains:
+      - "Storage Spaces"
+      - "storage pool"
+      - "physical disk"
+      - "retired"
+      - "degraded"
+      - "SpacePort"
+      - "StorageSubSystem"
+  condition: selection
+
+---
+id: stor-io-001
+title: I/O Error — Delayed Write / Lost Data
+description: >
+  Data loss event — a delayed write has permanently failed or the
+  system could not write to disk.
+level: critical
+author: BeanFeasa
+tags:
+  - storage.io
+  - data.loss
+detection:
+  selection:
+    message|contains:
+      - "delayed write failed"
+      - "data lost"
+      - "lost delayed-write"
+      - "data may have been lost"
+      - "write operation failed"
+      - "unable to write"
+  condition: selection
+
+---
+id: stor-iscsi-001
+title: iSCSI Connection Error
+description: >
+  An iSCSI target connection has failed, been dropped, or timed out.
+  Impacts SAN-attached storage.
+level: high
+author: BeanFeasa
+tags:
+  - storage.iscsi
+  - network.storage
+detection:
+  selection:
+    message|contains:
+      - "iSCSI"
+      - "iscsi"
+      - "target portal"
+      - "connection lost"
+      - "session failed"
+      - "initiator"
+      - "MSiSCSI"
+  condition: selection
+
+---
+id: stor-linux-001
+title: Linux Filesystem Error (EXT4, XFS, Btrfs)
+description: >
+  Linux filesystem has detected corruption or been remounted read-only
+  due to errors.
+level: critical
+author: BeanFeasa
+tags:
+  - storage.linux
+  - filesystem
+detection:
+  selection:
+    message|contains:
+      - "EXT4-fs error"
+      - "XFS error"
+      - "Btrfs error"
+      - "remounting filesystem read-only"
+      - "I/O error"
+      - "input/output error"
+      - "journal recovery"
+      - "forced read-only"
+      - "Remounting filesystem read-only"
+      - "checksum error"
+  condition: selection

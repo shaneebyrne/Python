@@ -1,0 +1,415 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — BIOS / Firmware
+# Covers: UEFI, Secure Boot, TPM, ACPI, SMBIOS,
+#         Firmware updates, CMOS, POST errors,
+#         Intel ME/AMT, Dell/HP/Lenovo OEM
+# ────────────────────────────────────────────────
+
+---
+id: fw-uefi-001
+title: Secure Boot Violation
+description: >
+  Secure Boot has blocked an unsigned or improperly signed bootloader
+  or driver from loading. Could indicate tampering or driver issues.
+  NOTE: TPM EID:1801 (pending cert update) is an advisory, not a
+  violation. Actual Secure Boot violations come from Security-Auditing.
+level: critical
+author: BeanFeasa
+tags:
+  - firmware.secureboot
+  - boot.integrity
+detection:
+  selection:
+    message|contains:
+      - "secure boot violation"
+      - "image verification failed"
+      - "boot integrity violation"
+      - "signature not found in file"
+      - "revoked certificate"
+      - "DBX"
+      - "Secure Boot policy violation"
+      - "DBX"
+  condition: selection
+
+---
+id: fw-uefi-002
+title: UEFI Firmware Error
+description: >
+  A UEFI firmware component has reported an error during boot or
+  runtime. May indicate motherboard or firmware corruption.
+  NOTE: Restricted to actual UEFI error patterns. Software
+  Protection Platform and boot measurement events are excluded.
+level: high
+author: BeanFeasa
+tags:
+  - firmware.uefi
+  - boot
+detection:
+  selection:
+    message|contains:
+      - "UEFI firmware error"
+      - "firmware corruption"
+      - "NVRAM error"
+      - "EFI variable error"
+      - "firmware update failed"
+      - "UEFI boot failure"
+  condition: selection
+      - "firmware update failed"
+  condition: selection
+
+---
+id: fw-tpm-001
+title: TPM Command Failure
+description: >
+  TPM hardware failed to execute a command. Only fires when the event
+  level is Error or Warning. EID 1025 'TPM successfully provisioned'
+  and EID 18 'TPM provisioning check triggered' are Information-level
+  SUCCESS events that must not fire this rule.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.tpm
+  - security.tpm
+detection:
+  tpm_source:
+    source|contains:
+      - "TPM"
+      - "Microsoft-Windows-TPM-WMI"
+  tpm_failure_level:
+    level|contains:
+      - "error"
+      - "warning"
+  condition: tpm_source and tpm_failure_level
+---
+id: fw-tpm-002
+title: TPM Event Log Entries (Event 12, 13, 14)
+description: >
+  TPM-related events from the Microsoft TPM provider. Event 12 = TPM
+  cleared, 13 = PCR mismatch, 14 = firmware update.
+level: high
+author: BeanFeasa
+tags:
+  - firmware.tpm
+  - tpm.lifecycle
+detection:
+  selection:
+    source|contains:
+      - "TPM"
+      - "TBS"
+      - "Microsoft-Windows-TPM"
+    event_id|equals:
+      - "12"
+      - "13"
+      - "14"
+  condition: selection
+
+---
+id: fw-acpi-001
+title: ACPI Error / BIOS Incompatibility
+description: >
+  ACPI firmware has encountered an error. Scoped to
+  Microsoft-Windows-Kernel-ACPI and ACPI-related sources.
+  PREVIOUSLY BROKEN: fired on MsiInstaller Event 1035 (product
+  reconfiguration) because it shared no source/EID validation.
+  EID 1035 from MsiInstaller is unrelated to ACPI entirely.
+level: high
+author: BeanFeasa
+tags:
+  - firmware.acpi
+  - bios.incompatibility
+detection:
+  acpi_source:
+    source|contains:
+      - "Microsoft-Windows-Kernel-ACPI"
+      - "ACPI"
+      - "Microsoft-Windows-ACPI-Interrupts"
+  acpi_message:
+    message|contains:
+      - "ACPI BIOS"
+      - "ACPI table"
+      - "DSDT"
+      - "SSDT"
+      - "MADT"
+      - "AMLI"
+      - "OperationRegion"
+  filter_msi:
+    source|contains:
+      - "MsiInstaller"
+      - "Microsoft-Windows-WindowsUpdateClient"
+  condition: (acpi_source or acpi_message) and not filter_msi
+---
+id: fw-acpi-002
+title: ACPI BIOS Warning (Event 10, 12)
+description: >
+  ACPI BIOS has reported issues with its configuration tables.
+  Common with outdated BIOS versions.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.acpi
+  - bios.warning
+detection:
+  selection:
+    event_id|equals:
+      - "10"
+      - "12"
+    source|contains:
+      - "ACPI"
+      - "Microsoft-Windows-Kernel-ACPI"
+  condition: selection
+
+---
+id: fw-smbios-001
+title: SMBIOS / DMI Data Error
+description: >
+  SMBIOS (DMI) data from the BIOS is malformed or contains errors.
+  May indicate BIOS corruption or incompatible firmware.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.smbios
+  - bios.data
+detection:
+  selection:
+    message|contains:
+      - "SMBIOS error"
+      - "SMBIOS data"
+      - "DMI error"
+      - "DMI data error"
+      - "BIOS data error"
+  condition: selection
+
+---
+id: fw-update-001
+title: Firmware Update Event
+description: >
+  A firmware update was attempted, completed, or failed. Tracks
+  BIOS/UEFI and device firmware lifecycle.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.update
+  - lifecycle
+detection:
+  selection:
+    message|contains:
+      - "firmware update"
+      - "BIOS update"
+      - "UEFI update"
+      - "capsule update"
+      - "ESRT"
+      - "firmware version"
+      - "fwupd"
+      - "LVFS"
+      - "flash"
+  condition: selection
+
+---
+id: fw-update-002
+title: Firmware Update Failure
+description: >
+  A firmware update has failed, leaving the device potentially in
+  an inconsistent state.
+level: critical
+author: BeanFeasa
+tags:
+  - firmware.update
+  - failure
+detection:
+  selection:
+    message|contains:
+      - "firmware update failed"
+      - "BIOS update failed"
+      - "capsule update failed"
+      - "flash failed"
+      - "firmware rollback"
+      - "recovery mode"
+  condition: selection
+
+---
+id: fw-cmos-001
+title: CMOS / RTC Battery Issue
+description: >
+  CMOS battery failure indicators — clock reset, checksum errors,
+  or BIOS settings lost.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.cmos
+  - hardware.battery
+detection:
+  selection:
+    message|contains:
+      - "CMOS"
+      - "RTC"
+      - "checksum"
+      - "BIOS settings"
+      - "date and time"
+      - "clock"
+      - "CMOS battery"
+      - "defaults loaded"
+  condition: selection
+
+---
+id: fw-boot-001
+title: Boot Configuration Error (BCD)
+description: >
+  Boot Configuration Data (BCD) error preventing normal startup.
+  May indicate disk corruption, partition changes, or BCD tampering.
+  NOTE: Only fires on boot-related sources, not Application Error.
+level: critical
+author: BeanFeasa
+tags:
+  - firmware.boot
+  - bcd
+detection:
+  selection:
+    message|contains:
+      - "Boot Configuration Data"
+      - "0xc000000f"
+      - "0xc0000225"
+      - "0xc0000098"
+      - "boot device inaccessible"
+      - "INACCESSIBLE_BOOT_DEVICE"
+      - "winload.efi"
+      - "bootmgfw.efi"
+  condition: selection
+
+---
+id: fw-intel-001
+title: Intel Management Engine / AMT Event
+description: >
+  Intel Management Engine or Active Management Technology has reported
+  an event, error, or configuration change.
+level: high
+author: BeanFeasa
+tags:
+  - firmware.intel
+  - me.amt
+detection:
+  selection:
+    message|contains:
+      - "Management Engine"
+      - "Intel ME"
+      - "AMT"
+      - "HECI"
+      - "MEI"
+      - "Intel(R) Management"
+      - "vPro"
+  condition: selection
+
+---
+id: fw-oem-001
+title: Dell Hardware Diagnostic Event
+description: >
+  Dell-specific hardware diagnostic or SupportAssist alert indicating
+  a hardware health issue detected by Dell's diagnostic tools.
+  NOTE: Standalone 'Dell' is excluded — it matches every Dell driver
+  and service entry. Only actual diagnostic findings are flagged.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.oem
+  - dell
+detection:
+  selection:
+    message|contains:
+      - "Dell SupportAssist detected"
+      - "ePSA"
+      - "OMSA alert"
+      - "OpenManage alert"
+      - "iDRAC"
+      - "Dell Hardware error"
+      - "SupportAssist alert"
+      - "Dell Diagnostics"
+  condition: selection
+
+---
+id: fw-oem-002
+title: HP / HPE Hardware Diagnostic Event
+description: >
+  HP or HPE-specific hardware diagnostic, IML, or iLO event.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.oem
+  - hp
+detection:
+  selection:
+    message|contains:
+      - "HP Hardware"
+      - "IML"
+      - "iLO"
+      - "HP System"
+      - "HPE"
+      - "Integrated Management Log"
+      - "ProLiant"
+      - "HP SoftPaq"
+  condition: selection
+
+---
+id: fw-oem-003
+title: Lenovo Hardware Diagnostic Event
+description: >
+  Lenovo-specific hardware diagnostic, Vantage, or firmware event.
+level: medium
+author: BeanFeasa
+tags:
+  - firmware.oem
+  - lenovo
+detection:
+  selection:
+    message|contains:
+      - "Lenovo"
+      - "Vantage"
+      - "ThinkPad"
+      - "Lenovo Diagnostics"
+      - "UEFI Diagnostics"
+      - "IMController"
+  condition: selection
+
+---
+id: fw-wdac-001
+title: WDAC / Code Integrity Policy Violation (Event 3033, 3077)
+description: >
+  Windows Defender Application Control blocked an unsigned or
+  improperly signed binary. Event 3033 = audit, 3077 = enforced.
+level: high
+author: BeanFeasa
+tags:
+  - firmware.wdac
+  - code.integrity
+detection:
+  selection:
+    event_id|equals:
+      - "3033"
+      - "3077"
+      - "3076"
+      - "3089"
+    source|contains:
+      - "CodeIntegrity"
+      - "Microsoft-Windows-CodeIntegrity"
+  condition: selection
+
+---
+id: fw-wdac-002
+title: Code Integrity Blocked Driver/Binary
+description: >
+  Code Integrity has blocked a driver or binary from loading.
+  NOTE: Hyper-V side-channel mitigation info events (EID 165/167)
+  are NOT Code Integrity blocks. Actual CI blocks come from the
+  CodeIntegrity source with event IDs 3033/3076/3077/3089.
+level: high
+author: BeanFeasa
+tags:
+  - firmware.wdac
+  - hvci
+detection:
+  selection:
+    message|contains:
+      - "Code Integrity determined"
+      - "not allowed to load"
+      - "code integrity policy"
+      - "policy violation"
+      - "was not loaded because it is not signed"
+  condition: selection

@@ -1,0 +1,192 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Sample Rules — Windows Security
+# Sigma-inspired YAML detection format
+# ────────────────────────────────────────────────
+
+---
+id: win-security-001
+title: Suspicious PowerShell Execution
+description: Detects PowerShell commands with encoded or obfuscated execution patterns.
+level: high
+author: BeanFeasa
+tags:
+  - attack.execution
+  - attack.t1059.001
+detection:
+  selection:
+    message|contains:
+      - "-EncodedCommand"
+      - "-enc "
+      - "FromBase64String"
+      - "IEX("
+      - "Invoke-Expression"
+      - "powershell -e "
+      - "bypass -nop"
+      - "downloadstring"
+      - "Net.WebClient"
+      - "bitstransfer"
+  condition: selection
+
+---
+id: win-security-002
+title: Account Logon Failure (Event 4625)
+description: >
+  Detects Event ID 4625 (failed logon). CONTEXT REQUIRED: Check
+  logon type (3/10 = network/RDP = suspicious, 2/11 = local/cached
+  = usually benign), source address (::1/127.0.0.1 = localhost = not
+  brute force), and caller process (consent.exe = UAC prompt, not
+  attack). Only flag as brute force when failures come from remote
+  IPs with network logon types.
+level: medium
+author: BeanFeasa
+tags:
+  - attack.credential_access
+  - attack.t1110
+detection:
+  selection:
+    event_id|equals:
+      - "4625"
+  condition: selection
+
+---
+id: win-security-003
+title: New Service Installed
+description: Detects Event ID 7045 — a new service was installed, which could indicate persistence.
+level: medium
+author: BeanFeasa
+tags:
+  - attack.persistence
+  - attack.t1543.003
+detection:
+  selection:
+    event_id|equals:
+      - "7045"
+  condition: selection
+
+---
+id: win-security-004
+title: Suspicious Scheduled Task Created
+description: Detects Event ID 4698 — a scheduled task was created. Common persistence technique.
+level: medium
+author: BeanFeasa
+tags:
+  - attack.persistence
+  - attack.t1053.005
+detection:
+  selection:
+    event_id|equals:
+      - "4698"
+  condition: selection
+
+---
+id: win-security-005
+title: User Account Created
+description: Detects Event ID 4720 — a new user account was created.
+level: low
+author: BeanFeasa
+tags:
+  - attack.persistence
+  - attack.t1136.001
+detection:
+  selection:
+    event_id|equals:
+      - "4720"
+  condition: selection
+
+---
+id: win-security-006
+title: Audit Policy Changed
+description: Detects Event ID 4719 — system audit policy was changed. May indicate defense evasion.
+level: high
+author: BeanFeasa
+tags:
+  - attack.defense_evasion
+  - attack.t1562.002
+detection:
+  selection:
+    event_id|equals:
+      - "4719"
+  condition: selection
+
+---
+id: win-security-007
+title: Security Log Cleared (EID 1102 / 517)
+description: >
+  The Windows Security or System audit log was deliberately cleared.
+  EID 1102 = Security log cleared (Windows Vista+).
+  EID 517 = Security log cleared (legacy Windows XP/2003).
+  STRICT: requires BOTH correct EID AND Microsoft-Windows-Eventlog source.
+  Previous versions caused catastrophic false positives by matching
+  Security channel broadly — every logon/logoff/privilege event (4624,
+  4625, 4672, 4611, 4634 etc.) was labelled 'Security Log Cleared'.
+  The only genuine source for log-clear events is Microsoft-Windows-Eventlog.
+level: critical
+author: BeanFeasa
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001
+detection:
+  selection:
+    event_id|equals:
+      - "1102"
+      - "517"
+    source|equals:
+      - "Microsoft-Windows-Eventlog"
+  condition: selection
+---
+id: win-security-008
+title: Pass the Hash Indicator
+description: Detects logon type 9 (NewCredentials) with NTLM auth, which may indicate Pass-the-Hash.
+level: high
+author: BeanFeasa
+tags:
+  - attack.lateral_movement
+  - attack.t1550.002
+detection:
+  logon_type:
+    message|contains:
+      - "Logon Type:		9"
+      - "LogonType=9"
+  auth_package:
+    message|contains:
+      - "NTLM"
+  condition: logon_type and auth_package
+
+---
+id: win-security-009
+title: RDP Lateral Movement
+description: Detects Event ID 4624 with Logon Type 10 (RemoteInteractive) indicating RDP sessions.
+level: medium
+author: BeanFeasa
+tags:
+  - attack.lateral_movement
+  - attack.t1021.001
+detection:
+  event:
+    event_id|equals:
+      - "4624"
+  rdp:
+    message|contains:
+      - "Logon Type:		10"
+      - "LogonType=10"
+  condition: event and rdp
+
+---
+id: win-security-010
+title: Mimikatz Indicators
+description: Detects common Mimikatz-related strings in log messages.
+level: critical
+author: BeanFeasa
+tags:
+  - attack.credential_access
+  - attack.t1003
+detection:
+  selection:
+    message|contains:
+      - "mimikatz"
+      - "sekurlsa"
+      - "kerberos::list"
+      - "lsadump"
+      - "privilege::debug"
+      - "token::elevate"
+  condition: selection

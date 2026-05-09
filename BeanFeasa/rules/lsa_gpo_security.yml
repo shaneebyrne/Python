@@ -1,0 +1,72 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — LSA / GPO Security
+# New rules added post USVIS-952KC14 analysis
+#
+# Covers the two highest-impact detection gaps:
+#   1. LsaSrv Event 5000 — Kerberos SSP exception in lsass (crash precursor)
+#   2. Group Policy Event 1502 — New settings applied (configuration change)
+#
+# These two rules, combined with the new correlation chains in
+# correlation_engine.py, would have identified root cause in
+# USVIS-952KC14 without any manual WinDbg analysis.
+#
+# COLLECTION REQUIREMENT:
+#   gpo-change-001 requires Microsoft-Windows-GroupPolicy/Operational
+#   to be included in the DataScout.Tek collection manifest:
+#     Get-WinEvent -LogName 'Microsoft-Windows-GroupPolicy/Operational'
+# ────────────────────────────────────────────────
+
+---
+id: lsa-krb-crash-001
+title: Kerberos SSP Exception in lsass (LsaSrv Event 5000)
+description: >
+  LsaSrv Event 5000 fires within ~1 second before every lsass.exe death
+  when a Kerberos authentication package throws an unhandled exception.
+  This is the canonical crash precursor for Kerberos-induced lsass failures.
+  Standalone: fires at High severity. When correlated with Event 1000
+  (lsass.exe crash) by the lsass-kerberos chain, escalates to Critical.
+  Previously absent from the rule set — its presence would have identified
+  root cause in USVIS-952KC14 immediately on first crash.
+level: high
+author: BeanFeasa
+tags:
+  - software.lsass
+  - lsass.crash.kerberos
+  - credential_subsystem
+detection:
+  selection:
+    event_id|equals:
+      - "5000"
+    source|contains:
+      - "LsaSrv"
+  condition: selection
+
+---
+id: gpo-change-001
+title: Group Policy Applied New Settings (Event 1502)
+description: >
+  Group Policy Event 1502 with "new settings" in the message records a
+  GPO foreground or background refresh where at least one new policy
+  object was applied. When correlated with crash events within 60 minutes
+  (via the gpo-crash chain), this is the primary configuration-change
+  root-cause vector. Standalone: High severity.
+  The April 13 5:02 PM GPO application in USVIS-952KC14 was the triggering
+  change — a Kerberos encryption policy that incompatible with the existing
+  kerberos.dll configuration.
+  REQUIRES: Microsoft-Windows-GroupPolicy/Operational log in collection.
+level: high
+author: BeanFeasa
+tags:
+  - configuration.gpo
+  - gpo.change
+  - root_cause_vector
+detection:
+  selection:
+    event_id|equals:
+      - "1502"
+    source|contains:
+      - "GroupPolicy"
+  new_settings:
+    message|contains:
+      - "new settings"
+  condition: selection and new_settings

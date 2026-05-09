@@ -1,0 +1,391 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Endpoint Management
+# Covers: Teams Rooms, RDP/Remote Desktop,
+#         Endpoint protection, SCCM/Intune, WinRM,
+#         Backup, Virtualization, Clustering
+# ────────────────────────────────────────────────
+
+---
+id: ep-teams-001
+title: Teams / Teams Room Error
+description: >
+  Microsoft Teams or Teams Room device has encountered an error.
+  Scoped to Teams-specific sources to prevent firing on Outlook
+  add-in events (EID 45 from Outlook) or other Office apps.
+  PREVIOUSLY BROKEN: fired on Outlook add-in load (EID 45)
+  because 'Teams' appeared nowhere in the event but the rule
+  matched on generic collaboration keywords.
+level: medium
+author: BeanFeasa
+tags:
+  - endpoint.teams
+  - collaboration
+detection:
+  teams_source:
+    source|contains:
+      - "Microsoft-Windows-MeetingSpace"
+      - "Skype"
+      - "Teams"
+      - "MCore"
+      - "TeamsAudioService"
+  teams_message:
+    message|contains:
+      - "Teams Room"
+      - "MCore"
+      - "msteams"
+      - "TeamsAudioService"
+      - "conference room"
+  filter_office:
+    source|contains:
+      - "Outlook"
+      - "Microsoft Office"
+      - "WINWORD"
+      - "EXCEL"
+  condition: (teams_source or teams_message) and not filter_office
+---
+id: ep-teams-002
+title: Teams Room Peripheral Failure
+description: >
+  A peripheral (camera, mic, speaker) on a Teams Room device has failed.
+  PREVIOUSLY BROKEN: fired on NVIDIA Virtual Audio service type changes
+  (EID 7040 from SCM). Generic peripheral keywords matched NVIDIA GPU
+  audio with no Teams Room involvement. Now requires Teams Room source
+  context AND peripheral-specific failure keywords, not just the word 'camera'.
+level: high
+author: BeanFeasa
+tags:
+  - endpoint.teams
+  - peripheral
+detection:
+  teams_room_source:
+    source|contains:
+      - "MCore"
+      - "Teams Room"
+      - "Skype Room System"
+      - "Microsoft-Windows-MeetingSpace"
+  peripheral_failure:
+    message|contains:
+      - "camera not found"
+      - "microphone not available"
+      - "audio device missing"
+      - "HDMI not detected"
+      - "peripheral disconnected"
+      - "capture device failed"
+      - "Jabra"
+      - "Poly"
+  condition: teams_room_source and peripheral_failure
+---
+id: ep-rdp-001
+title: RDP Connection Failure (Event 1024, 1026)
+description: >
+  Remote Desktop connection has failed — certificate error, NLA
+  failure, or network issue.
+level: medium
+author: BeanFeasa
+tags:
+  - endpoint.rdp
+  - remote
+detection:
+  selection:
+    event_id|equals:
+      - "1024"
+      - "1026"
+      - "1027"
+    source|contains:
+      - "TerminalServices"
+      - "RemoteDesktop"
+  condition: selection
+
+---
+id: ep-rdp-002
+title: RDP Session Disconnect / Error
+description: >
+  Generic RDP disconnection or error indicators.
+level: low
+author: BeanFeasa
+tags:
+  - endpoint.rdp
+  - session
+detection:
+  selection:
+    message|contains:
+      - "RDP"
+      - "Remote Desktop"
+      - "TermService"
+      - "session disconnect"
+      - "rdpcorets"
+      - "rdpdr"
+      - "RDPWD"
+      - "3389"
+  condition: selection
+
+---
+id: ep-av-001
+title: Endpoint Protection Alert / Detection
+description: >
+  AV/EDR has detected a genuine threat or had an operational failure.
+  Restricted to actual AV detection event IDs from AV-specific sources.
+  EID 101 from Microsoft-Windows-Diagnostics-Performance is a SLOW STARTUP
+  event (application took longer than usual) — not an AV alert. Previously
+  firing 20+ times per boot on MsMpEng slow start events.
+  Correct AV detection EIDs: 1116 (threat found), 1117 (action taken),
+  1008 (scan failed), 5001 (real-time protection disabled).
+level: high
+author: BeanFeasa
+tags:
+  - endpoint.protection
+  - antivirus
+detection:
+  av_detection:
+    event_id|equals:
+      - "1116"
+      - "1117"
+    source|contains:
+      - "Microsoft-Windows-Windows Defender"
+      - "Windows Defender"
+  av_failure:
+    event_id|equals:
+      - "1008"
+      - "5001"
+      - "5013"
+    source|contains:
+      - "Microsoft-Windows-Windows Defender"
+      - "Microsoft Antimalware"
+  third_party_av:
+    source|contains:
+      - "SentinelOne"
+      - "SentinelAgent"
+      - "Sophos"
+      - "Bitdefender"
+      - "CrowdStrike"
+    message|contains:
+      - "threat detected"
+      - "malware"
+      - "quarantine"
+      - "detection"
+  condition: av_detection or av_failure or third_party_av
+---
+id: ep-av-002
+title: Endpoint Protection Service Error
+description: >
+  AV/EDR service has encountered an operational error. Excludes
+  Windows Update installation events (KB updates for Defender platform)
+  which are successful update operations, not service errors.
+level: medium
+author: BeanFeasa
+tags:
+  - endpoint.protection
+  - service.error
+detection:
+  service_error:
+    source|contains:
+      - "Microsoft-Windows-Windows Defender"
+      - "SentinelOne"
+      - "Sophos"
+    message|contains:
+      - "service failed"
+      - "component failed"
+      - "could not update"
+      - "error code"
+  filter_update_success:
+    source|contains:
+      - "WindowsUpdateClient"
+      - "MsiInstaller"
+    message|contains:
+      - "successfully installed"
+      - "installation succeeded"
+      - "reconfiguration success"
+  condition: service_error and not filter_update_success
+---
+id: ep-sccm-001
+title: SCCM / MECM Client Error
+description: >
+  Configuration Manager (SCCM/MECM) client has reported a policy
+  failure, deployment error, or communication issue.
+level: medium
+author: BeanFeasa
+tags:
+  - endpoint.sccm
+  - management
+detection:
+  selection:
+    message|contains:
+      - "SCCM"
+      - "MECM"
+      - "CCMExec"
+      - "Configuration Manager"
+      - "SMS Agent"
+      - "policy download"
+      - "deployment"
+      - "DCM"
+      - "CcmExec"
+  condition: selection
+
+---
+id: ep-intune-001
+title: Intune / MDM Enrollment or Compliance Error
+description: >
+  Microsoft Intune or MDM enrollment, sync, or compliance check failure.
+  Scoped to MDM-specific sources and event patterns to prevent matching
+  WER crash events whose stack traces contain MDM-adjacent keywords.
+  Previously misclassified a WavesSvc64.exe crash as an MDM error
+  on USVIS-JQD1SQ3 due to keyword overlap in crash report text.
+level: medium
+author: BeanFeasa
+tags:
+  - endpoint.intune
+  - mdm
+detection:
+  mdm_source:
+    source|contains:
+      - "Microsoft-Windows-DeviceManagement"
+      - "Microsoft-Windows-Intune"
+      - "DMClient"
+      - "OMA-DM"
+      - "Autopilot"
+  mdm_message:
+    message|contains:
+      - "MDM enrollment"
+      - "OMA-DM"
+      - "OMA-URI"
+      - "Autopilot enrollment"
+      - "DeviceManagementEnterpriseRegistration"
+  filter_wer:
+    event_id|equals:
+      - "1001"
+    source|contains:
+      - "Windows Error Reporting"
+  condition: (mdm_source or mdm_message) and not filter_wer
+---
+id: ep-winrm-001
+title: WinRM / WSMan Error
+description: >
+  Windows Remote Management has encountered errors — authentication
+  failure, connectivity issue, or configuration problem.
+  NOTE: Restricted to actual WinRM error patterns. Port numbers
+  and generic service names are excluded to prevent false positives.
+level: medium
+author: BeanFeasa
+tags:
+  - endpoint.winrm
+  - remote.management
+detection:
+  selection:
+    message|contains:
+      - "WinRM cannot process"
+      - "WinRM client cannot"
+      - "WinRM service failed"
+      - "WSMan error"
+      - "WS-Management error"
+      - "WinRM access denied"
+      - "WinRM authentication failed"
+  condition: selection
+  condition: selection
+
+---
+id: ep-backup-001
+title: Backup Failure
+description: >
+  A backup operation has failed — Windows Backup, Veeam, or other
+  backup software has reported an error.
+level: high
+author: BeanFeasa
+tags:
+  - endpoint.backup
+  - data.protection
+detection:
+  selection:
+    message|contains:
+      - "backup failed"
+      - "backup error"
+      - "Windows Backup"
+      - "wbengine"
+      - "Veeam"
+      - "backup job"
+      - "backup completed with errors"
+      - "backup incomplete"
+      - "SPPSvc"
+      - "SystemStateBackup"
+  condition: selection
+
+---
+id: ep-vm-001
+title: Hyper-V / Virtualization Error
+description: >
+  Hyper-V or virtualization platform has encountered an error —
+  VM crash, snapshot failure, or host issue. NOTE: On VBS-enabled
+  devices, Kernel-Processor-Power EID:55 and Hyper-V EID:165/167
+  are normal capability enumeration — NOT errors. Auto-suppressed
+  on VBS-enabled devices by device context.
+level: high
+author: BeanFeasa
+tags:
+  - endpoint.hyperv
+  - virtualization
+detection:
+  selection:
+    message|contains:
+      - "VMMS"
+      - "vmwp"
+      - "VM failed"
+      - "snapshot failed"
+      - "virtual machine error"
+      - "Hyper-V error"
+      - "Hyper-V failed"
+      - "hypervisor"
+      - "VirtualBox"
+      - "KVM"
+      - "QEMU"
+  condition: selection
+
+---
+id: ep-cluster-001
+title: Cluster / Failover Error
+description: >
+  A Windows Failover Cluster node has gone down, a resource has
+  failed over, or quorum has been lost.
+level: critical
+author: BeanFeasa
+tags:
+  - endpoint.cluster
+  - failover
+detection:
+  selection:
+    message|contains:
+      - "cluster"
+      - "failover"
+      - "quorum"
+      - "node down"
+      - "resource failed"
+      - "ClusSvc"
+      - "cluster network"
+      - "cluster disk"
+      - "witness"
+  condition: selection
+
+---
+id: ep-ad-001
+title: Active Directory Replication Error
+description: >
+  AD DS replication has failed between domain controllers. May indicate
+  network, DNS, or tombstone issues. Auto-suppressed on WORKGROUP
+  (non-domain) devices by device context.
+level: high
+author: BeanFeasa
+tags:
+  - endpoint.ad
+  - replication
+detection:
+  selection:
+    message|contains:
+      - "Directory Replication failed"
+      - "replication error"
+      - "DRA operation failed"
+      - "inbound replication failed"
+      - "lingering object"
+      - "tombstone"
+      - "USN rollback"
+      - "replication link failure"
+      - "tombstone"
+      - "USN rollback"
+  condition: selection

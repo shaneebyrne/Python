@@ -1,0 +1,300 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Evaluation Fixes
+# Addresses MISS-01 through MISS-09 from the
+# March 2026 evaluation report.
+# ────────────────────────────────────────────────
+
+# ── MISS-02/03: Chronic Application Crashes ──
+
+---
+id: eval-crash-001
+title: "Application Crash (Event 1000)"
+description: >
+  An application crashed (Application Error). Parse the faulting
+  module name and exception code. Track crash frequency per process
+  to identify chronic instability.
+level: medium
+author: BeanFeasa
+tags:
+  - software.crash
+  - application.error
+detection:
+  selection:
+    event_id|equals:
+      - "1000"
+    source|contains:
+      - "Application Error"
+  condition: selection
+
+---
+id: eval-crash-002
+title: ".NET / CLR Application Crash"
+description: >
+  Application crashed with a .NET CLR exception (0xe0434352,
+  0x80131623, 0x80131506). Indicates a managed code failure.
+level: medium
+author: BeanFeasa
+tags:
+  - software.crash
+  - dotnet
+  - clr
+detection:
+  selection:
+    message|contains:
+      - "0xe0434352"
+      - "0x80131623"
+      - "0x80131506"
+      - "0x80131604"
+      - "CLR exception"
+      - "ExecutionEngineException"
+  condition: selection
+
+# ── MISS-04: Service Install + Fail Loop ──
+
+---
+id: eval-svcloop-001
+title: "Service Install Event (7045)"
+description: >
+  A new service was installed. Cross-reference with EventID 7000
+  to detect install-then-fail loops (e.g., driver deployment
+  repeatedly installing a service whose binary doesn't exist).
+level: low
+author: BeanFeasa
+tags:
+  - software.service
+  - service.install
+detection:
+  selection:
+    event_id|equals:
+      - "7045"
+    source|contains:
+      - "Service Control Manager"
+  condition: selection
+
+---
+id: eval-svcloop-002
+title: "Service Failed to Start — File Not Found (7000)"
+description: >
+  A service failed to start because its binary was not found.
+  When paired with EventID 7045 for the same service name,
+  indicates a broken driver/service deployment loop.
+level: medium
+author: BeanFeasa
+tags:
+  - software.service
+  - service.failure
+  - install.loop
+detection:
+  selection:
+    event_id|equals:
+      - "7000"
+    source|contains:
+      - "Service Control Manager"
+    message|contains:
+      - "not found"
+      - "does not exist"
+      - "file not found"
+      - "path"
+  condition: selection
+
+# ── MISS-05: MSI Installer Failure Loop ──
+
+---
+id: eval-msi-001
+title: "MSI Installer Reconfiguration Failure"
+description: >
+  Windows Installer reconfiguration failed with a non-zero error
+  status. Event 1035 with "status: 0" is a SUCCESSFUL operation
+  and is excluded. Only events containing a non-zero error status
+  are flagged. On dev workstations with Visual Studio, hundreds
+  of 1035-status:0 events are normal component reconfigs.
+level: medium
+author: BeanFeasa
+tags:
+  - software.installer
+  - msi.failure
+detection:
+  event:
+    event_id|equals:
+      - "1035"
+    source|contains:
+      - "MsiInstaller"
+  failure:
+    message|contains:
+      - "error status: 1603"
+      - "error status: 1618"
+      - "error status: 1625"
+      - "error status: 1602"
+      - "error status: 1612"
+      - "error status: 1601"
+  condition: event and failure
+
+---
+id: eval-msi-002
+title: "MSI Installer Fatal Error Status 1603"
+description: >
+  MSI operation returned fatal error 1603. Common causes:
+  insufficient permissions, locked files, corrupted installer
+  cache, or conflicting software.
+level: medium
+author: BeanFeasa
+tags:
+  - software.installer
+  - msi.fatal
+detection:
+  selection:
+    message|contains:
+      - "1603"
+      - "fatal error"
+    source|contains:
+      - "MsiInstaller"
+  condition: selection
+
+# ── MISS-07: Boot Performance Degradation ──
+
+---
+id: eval-boot-001
+title: "Degraded Boot Detected (Perf Diagnostics Event 100)"
+description: >
+  Windows Boot Performance Diagnostics flagged this boot as
+  degraded (IsDegradation=true). Total boot time exceeded
+  acceptable thresholds. NOTE: Only fires when IsDegradation
+  is actually true. Normal boots (IsDegradation=false) are excluded.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.boot
+  - diagnostics
+detection:
+  event:
+    event_id|equals:
+      - "100"
+  degraded:
+    message|contains:
+      - "IsDegradation\t\t:\ttrue"
+      - "IsDegradation : true"
+      - "IsDegradation=true"
+  condition: event and degraded
+
+---
+id: eval-boot-002
+title: "Slow Startup Application (Perf Diagnostics Event 101)"
+description: >
+  A startup application caused significant boot degradation.
+  DegradationTime > 5000ms is flagged. Identifies which process
+  is slowing down the boot sequence.
+level: medium
+author: BeanFeasa
+tags:
+  - performance.boot
+  - startup.delay
+detection:
+  selection:
+    event_id|equals:
+      - "101"
+    message|contains:
+      - "DegradationTime"
+      - "startup"
+      - "Diagnostics-Performance"
+  condition: selection
+
+# ── MISS-08: UAC Account Configuration Issue ──
+
+---
+id: eval-uac-001
+title: "UAC Elevation Failure (Local Account)"
+description: >
+  Logon failure (4625) originating from consent.exe at localhost
+  (::1 or 127.0.0.1). This is NOT a brute force attack — it is
+  a UAC elevation failure indicating the local admin account has
+  a wrong password, is disabled, or is locked out.
+level: low
+author: BeanFeasa
+tags:
+  - security.uac
+  - account.config
+detection:
+  consent:
+    message|contains:
+      - "consent.exe"
+  failure:
+    event_id|equals:
+      - "4625"
+  condition: consent and failure
+
+# ── MISS-09: NTFS Event 98 — Recovery, NOT Corruption ──
+
+---
+id: eval-ntfs-001
+title: "NTFS Post-Crash Volume Recovery (Event 98, Clean)"
+description: >
+  NTFS Event 98 with parameter=0 is a SUCCESSFUL post-crash
+  volume remount — NOT corruption. All volumes recovered cleanly
+  after the unclean shutdown. This is expected after every BSOD
+  and confirms filesystem integrity.
+level: informational
+author: BeanFeasa
+tags:
+  - storage.ntfs
+  - recovery.success
+  - post.crash
+detection:
+  selection:
+    event_id|equals:
+      - "98"
+    source|contains:
+      - "Ntfs"
+  condition: selection
+
+# ── FIX: Netlogon 5719 — often a post-crash artifact ──
+
+---
+id: eval-netlogon-001
+title: "Netlogon 5719 — DC Contact Failure"
+description: >
+  Netlogon could not contact a domain controller. When this occurs
+  within 10 minutes of a Kernel-Power 41 (BSOD), it is almost
+  always a post-crash artifact — the NIC was not yet available
+  when Netlogon attempted DC contact during boot. Check crash
+  timeline before treating as an independent AD failure.
+level: medium
+author: BeanFeasa
+tags:
+  - network.netlogon
+  - ad.communication
+  - post.crash.check
+detection:
+  selection:
+    event_id|equals:
+      - "5719"
+    source|contains:
+      - "NETLOGON"
+  condition: selection
+
+# ── WER Event 1001 — BSOD Crash Report ──
+
+---
+id: eval-wer-001
+title: "WER BSOD Crash Report (Event 1001, BlueScreen)"
+description: >
+  Windows Error Reporting captured a BSOD crash dump. Parse the
+  fault bucket for the faulting module name. Each unique minidump
+  file reference represents a separate crash event.
+level: critical
+author: BeanFeasa
+tags:
+  - software.bsod
+  - wer
+  - crash.report
+detection:
+  wer:
+    event_id|equals:
+      - "1001"
+    source|contains:
+      - "Windows Error Reporting"
+  bluescreen:
+    message|contains:
+      - "BlueScreen"
+      - "BugCheck"
+      - "LiveKernelEvent"
+  condition: wer and bluescreen

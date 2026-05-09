@@ -1,0 +1,533 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Rules — Tempo Communications Inc.
+# Environment-specific rules tuned to known patterns
+# from diagnostic sessions across the fleet.
+#
+# These rules target recurring issues seen on Tempo
+# endpoints — WHEA cache errors, SentinelOne FPs,
+# Dell SupportAssist triggers, StorPort DLR issues,
+# Teams Room MCore freezes, and IntelTACD.sys failures.
+#
+# Customize as your environment evolves.
+# ────────────────────────────────────────────────
+
+---
+id: tempo-whea-001
+title: "Tempo: Recurring WHEA Cache Hierarchy Error"
+description: >
+  WHEA Event 19 with 'Cache Hierarchy Error' on Processor Core.
+  Seen recurring on multiple Tempo endpoints — often cosmetic with
+  Intel 12th/13th gen but high volume indicates degradation.
+  Cross-reference with APIC ID to identify specific core.
+level: medium
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.hardware
+  - whea.cache
+  - intel.microcode
+detection:
+  whea_source:
+    source|contains:
+      - "WHEA"
+  cache_error:
+    message|contains:
+      - "Cache Hierarchy Error"
+      - "Corrected Machine Check"
+  condition: whea_source and cache_error
+
+---
+id: tempo-whea-002
+title: "Tempo: WHEA Error Escalation to BSOD"
+description: >
+  WHEA hardware error followed by system crash. Pattern seen on
+  Jose's workstation and other Tempo endpoints where corrected
+  errors escalate to uncorrectable crashes.
+level: critical
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.hardware
+  - whea.escalation
+  - bsod
+detection:
+  selection:
+    message|contains:
+      - "WHEA_UNCORRECTABLE_ERROR"
+      - "0x00000124"
+  condition: selection
+
+---
+id: tempo-s1-001
+title: "Tempo: SentinelOne Service Crash (False Positive Pattern)"
+description: >
+  SentinelOne agent service terminated unexpectedly. Known pattern
+  at Tempo — S1 sometimes triggers Event 7034 during scan operations
+  or when quarantining benign tools (PY_CY, SAK, custom batch scripts).
+level: medium
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.edr
+  - sentinelone
+  - false.positive
+detection:
+  service_crash:
+    event_id|equals:
+      - "7034"
+      - "7031"
+  sentinel:
+    message|contains:
+      - "SentinelOne"
+      - "SentinelAgent"
+      - "SentinelStaticEngine"
+      - "SentinelHelperService"
+  condition: service_crash and sentinel
+
+---
+id: tempo-s1-002
+title: "Tempo: SentinelOne Quarantine Action"
+description: >
+  SentinelOne has quarantined or blocked a file. Cross-reference
+  with the file path — custom IT tools in OneDrive Code folders
+  are commonly false-positived.
+level: medium
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.edr
+  - sentinelone
+  - quarantine
+detection:
+  selection:
+    message|contains:
+      - "SentinelOne"
+      - "quarantine"
+      - "threat detected"
+      - "malicious"
+      - "suspicious"
+      - "blocked"
+  condition: selection
+
+---
+id: tempo-dell-001
+title: "Tempo: Dell SupportAssist Triggering Events"
+description: >
+  Dell SupportAssist or BIOS diagnostics generating system events.
+  Restricted to Dell diagnostic/driver sources — MsiInstaller
+  product reconfiguration events for Dell products are handled
+  by tempo-msi-storm-001 and must not appear here.
+  Previously: 100 of 118 hits were MsiInstaller events for Dell
+  product names caught by broad 'Dell' keyword matching.
+level: medium
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.oem
+  - dell.supportassist
+detection:
+  dell_diag_source:
+    source|contains:
+      - "DSA"
+      - "SupportAssist"
+      - "DellInc"
+      - "Dell.Optimizer"
+    message|contains:
+      - "SupportAssist"
+      - "ePSA"
+      - "DSIA"
+      - "hardware diagnostic"
+  dell_reboot_marker:
+    message|contains:
+      - "SupportAssist"
+      - "ePSA"
+      - "Dell SupportAssist"
+    event_id|equals:
+      - "41"
+      - "6008"
+      - "1001"
+  filter_msi:
+    source|contains:
+      - "MsiInstaller"
+      - "Microsoft-Windows-WindowsUpdateClient"
+  condition: (dell_diag_source or dell_reboot_marker) and not filter_msi
+---
+id: tempo-storport-001
+title: "Tempo: StorPort DLR / NVMe Timeout"
+description: >
+  StorPort Dynamic Link Rate Management errors on NVMe drives.
+  Recurring on KIOXIA NVMe SSDs in Tempo fleet.
+  Restricted to actual StorPort timeout/DLR event IDs:
+    129 = StorPort reset issued (dead-lock recovery)
+    143 = StorPort timeout recovery
+    148 = StorPort request timeout
+  EID 27 from storport/storahci is disk DISCOVERY ('Found passthru disk:
+  PM981a NVMe') — normal boot enumeration, not a timeout or error.
+  Previously generating high-severity alerts on every boot.
+level: high
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.storage
+  - storport
+  - nvme
+  - kioxia
+detection:
+  selection:
+    event_id|equals:
+      - "129"
+      - "143"
+      - "148"
+    source|contains:
+      - "storahci"
+      - "stornvme"
+      - "StorPort"
+  condition: selection
+---
+id: tempo-teams-001
+title: "Tempo: Teams Room MCore Pro Freeze"
+description: >
+  Teams Room device (Yealink MCore Pro) has frozen or rebooted.
+  Pattern seen on Airscout and other Tempo conference rooms —
+  often triggered by Windows Update reboot or IntelTACD.sys driver
+  failure during a Teams meeting.
+level: high
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.teams
+  - mcore
+  - yealink
+detection:
+  selection:
+    message|contains:
+      - "MCore"
+      - "Yealink"
+      - "Teams Room"
+      - "SkypeRoomSystem"
+      - "CompanyPortal"
+      - "Airscout"
+  condition: selection
+
+---
+id: tempo-intel-001
+title: "Tempo: IntelTACD.sys Driver Failure"
+description: >
+  Intel Telemetry/ACPI driver (IntelTACD.sys) crash or load failure.
+  Identified as root cause of recurring Teams Room freezes at Tempo.
+  This driver handles Intel thermal/acoustic management and can
+  cause system hangs when it fails.
+level: high
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.driver
+  - intel
+  - inteltacd
+detection:
+  selection:
+    message|contains:
+      - "IntelTACD"
+      - "IntelTACD.sys"
+      - "Intel(R) Thermal"
+      - "Intel Acoustic"
+      - "TACD"
+  condition: selection
+
+---
+id: tempo-wdac-001
+title: "Tempo: WDAC Block on Non-Domain Device"
+description: >
+  WDAC enforcement blocking binaries on non-domain-joined devices
+  (Teams Rooms, kiosks). Known pattern at Tempo where MCore Pro
+  devices run strict Code Integrity policies that block unsigned
+  diagnostic tools.
+level: medium
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.wdac
+  - code.integrity
+  - teams.room
+detection:
+  wdac:
+    event_id|equals:
+      - "3077"
+      - "3076"
+    source|contains:
+      - "CodeIntegrity"
+  condition: wdac
+
+---
+id: tempo-wu-reboot-001
+title: "Tempo: Windows Update Forced Reboot"
+description: >
+  Windows Update triggered a reboot, potentially during production
+  hours. Pattern seen on Tempo Teams Rooms where scheduled tasks
+  for updates run during meetings.
+level: high
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.update
+  - reboot
+  - windows.update
+detection:
+  update:
+    message|contains:
+      - "Windows Update"
+      - "WindowsUpdateClient"
+      - "restart is required"
+      - "Restart Required"
+  reboot:
+    message|contains:
+      - "shutdown"
+      - "restart"
+      - "reboot"
+  condition: update
+
+---
+id: tempo-search-001
+title: "Tempo: Windows Search Indexer Degradation"
+description: >
+  Windows Search Indexer taking excessive time to start or
+  consuming high resources. Pattern seen on multiple Tempo
+  endpoints contributing to slow boot times.
+level: low
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.performance
+  - search.indexer
+detection:
+  selection:
+    message|contains:
+      - "Search Indexer"
+      - "SearchIndexer"
+      - "WSearch"
+      - "Windows Search"
+      - "indexing"
+  condition: selection
+
+---
+id: tempo-tpm-001
+title: "Tempo: TPM Command Failure (Non-HyperV)"
+description: >
+  TPM command failed on a physical endpoint. Only fires on
+  Error or Warning level events. Information-level TPM events
+  (EID 1025 'TPM successfully provisioned', EID 18 'TPM provisioning
+  status check') are success/status events and must not fire this rule.
+  Previously fired on every boot cycle TPM provisioning success.
+level: medium
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.tpm
+  - bitlocker
+detection:
+  tpm_source:
+    source|contains:
+      - "TPM"
+      - "Microsoft-Windows-TPM-WMI"
+  tpm_failure_level:
+    level|contains:
+      - "error"
+      - "warning"
+  condition: tpm_source and tpm_failure_level
+---
+id: tempo-time-001
+title: "Tempo: VMICTimeProvider Warning (Non-HyperV)"
+description: >
+  Time service warning about VMICTimeProvider on a physical machine.
+  This is expected and benign on non-Hyper-V hosts — the provider
+  detects it's not in a VM and disables itself. Log noise only.
+level: informational
+author: BeanFeasa (Tempo)
+tags:
+  - tempo.noise
+  - time.service
+detection:
+  selection:
+    message|contains:
+      - "VMICTimeProvider"
+      - "non-HyperV-guest"
+  condition: selection
+
+---
+id: tempo-sophos-ntp-001
+title: Sophos Network Threat Protection Driver Loaded (sntp.sys)
+description: >
+  The Sophos Network Threat Protection kernel driver has loaded.
+  On RICHLT this driver (sntp.sys) caused 0x000000D1
+  (DRIVER_IRQL_NOT_LESS_OR_EQUAL) BSODs within seconds of loading —
+  confirmed crash window: driver load at 9:33:47, BSOD at 9:34:00.
+  Even when Sophos appears uninstalled, sntp.sys and other kernel
+  drivers survive removal and load on every boot.
+level: high
+author: BeanFeasa
+tags:
+  - sophos.driver
+  - bsod.precursor
+  - kernel.driver
+detection:
+  selection:
+    source|contains:
+      - "Sophos-NetworkThreatProtection-Driver"
+  condition: selection
+
+---
+id: tempo-sophos-ntp-overflow-001
+title: Sophos NTP Network Buffer Overflow — BSOD Precursor
+description: >
+  Sophos Network Threat Protection driver reported its network event
+  buffer is full (Event 9). This event is a direct precursor to the
+  0x000000D1 BSOD caused by sntp.sys on RICHLT-class hardware.
+  The buffer overflow indicates the driver is processing network
+  events at a rate that exceeds its kernel buffer capacity, leading
+  to unsafe memory access at elevated IRQL.
+level: critical
+author: BeanFeasa
+tags:
+  - sophos.driver
+  - bsod.precursor
+  - buffer.overflow
+detection:
+  sophos_ntp_source:
+    event_id|equals:
+      - "9"
+    source|contains:
+      - "Sophos-NetworkThreatProtection-Driver"
+  buffer_message:
+    message|contains:
+      - "buffer is full"
+      - "network event buffer"
+  condition: sophos_ntp_source and buffer_message
+
+---
+id: tempo-dual-av-001
+title: Multiple AV Services Running Simultaneously
+description: >
+  More than one real-time AV/EDR engine is active. On RICHLT:
+  Sophos (SavService + SntpService), SentinelOne (SentinelAgent),
+  and Windows Defender (MsMpEng) all run concurrently, consuming
+  490+ CPU units and ~1.2 GB RAM combined, and causing kernel
+  driver conflicts that directly produce BSODs.
+  This rule fires when any Sophos AV service AND any other AV
+  service (S1 or Defender) are both detected in the same log set.
+level: critical
+author: BeanFeasa
+tags:
+  - av.conflict
+  - performance
+  - stability
+detection:
+  sophos_av:
+    source|contains:
+      - "Sophos"
+      - "SAVService"
+      - "SntpService"
+  other_av:
+    source|contains:
+      - "SentinelOne"
+      - "SentinelAgent"
+      - "Windows Defender"
+      - "CrowdStrike"
+  condition: sophos_av and other_av
+
+---
+id: tempo-lsa-thirdparty-inject-001
+title: Third-Party LSA Package Blocking Credential Guard (LsaSrv 6155)
+description: >
+  LsaSrv Event 6155 fires when a non-Microsoft LSA security package
+  is injected into lsass.exe and is not properly signed for
+  Credential Guard compatibility. On RICHLT the package is 'sfapm'
+  (Sophos Full-disk Access Policy Monitor) — a Sophos auth provider
+  module that survives Sophos uninstallation and prevents Credential
+  Guard from protecting LSASS.
+  Previously misclassified as net-cert-001 (Certificate Error).
+level: high
+author: BeanFeasa
+tags:
+  - lsass.injection
+  - credential.guard
+  - sophos.driver
+detection:
+  lsasrv_6155:
+    event_id|equals:
+      - "6155"
+    source|contains:
+      - "LsaSrv"
+  condition: lsasrv_6155
+
+---
+id: tempo-uems-wrong-domain-001
+title: UEMS Agent Targeting Non-Tempocom Server (DNS Failure)
+description: >
+  ManageEngine UEMS agent is attempting to contact a server on an
+  external or incorrect domain. DNS resolution failures for a
+  non-tempocom.com hostname from the UEMS process indicate the
+  agent's server configuration points to the wrong environment.
+  On RICHLT: agent targets DesktopCentral01.corp.spacelink.com
+  (external/incorrect domain) — causes hourly DNS failures which
+  trigger MSI reconfiguration storms as the agent retries policy
+  distribution from an unreachable server.
+level: high
+author: BeanFeasa
+tags:
+  - uems.config
+  - msi.storm
+  - dns.failure
+detection:
+  dns_failure:
+    event_id|equals:
+      - "1014"
+    source|contains:
+      - "Microsoft-Windows-DNS-Client"
+      - "DNS-Client"
+  wrong_domain:
+    message|contains:
+      - "spacelink.com"
+      - "desktopcentral"
+      - "timed out after none"
+  condition: dns_failure and wrong_domain
+
+---
+id: tempo-msi-storm-001
+title: MSI Reconfiguration Storm — Multiple Products Per Hour
+description: >
+  Windows Installer (MsiInstaller) Event 1035 is firing repeatedly
+  for multiple products in a short window. Legitimate reconfiguration
+  fires once per product per boot. More than 10 reconfiguration
+  events in a single hour across multiple products indicates a
+  management agent (UEMS, SCCM, Intune) is repeatedly retrying
+  policy distribution — typically because it cannot reach its server.
+  On RICHLT: 285 MsiInstaller events in one log window, all Sophos
+  products, triggered by UEMS failing to contact spacelink.com.
+level: high
+author: BeanFeasa
+tags:
+  - msi.storm
+  - uems.config
+  - performance
+detection:
+  msi_reconfig:
+    event_id|equals:
+      - "1035"
+    source|contains:
+      - "MsiInstaller"
+  condition: msi_reconfig
+
+---
+id: tempo-consent-logon-storm-001
+title: GPO Admin Credential Failure Storm (consent.exe UAC Loop)
+description: >
+  Multiple Security Event 4625 (logon failure) events originating
+  from consent.exe (UAC elevation prompt) indicate an admin
+  credential is being presented for elevation but is failing
+  repeatedly. On RICHLT this is caused by the SLAdmin GPO
+  configuring TempoAdmin as the required elevation account while
+  the stored/cached credentials are wrong or expired.
+level: high
+author: BeanFeasa
+tags:
+  - logon.failure
+  - uac.storm
+  - gpo.config
+detection:
+  logon_failure:
+    event_id|equals:
+      - "4625"
+    source|contains:
+      - "Microsoft-Windows-Security-Auditing"
+  consent_caller:
+    message|contains:
+      - "consent.exe"
+  condition: logon_failure and consent_caller

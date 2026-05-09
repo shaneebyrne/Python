@@ -1,0 +1,155 @@
+# ────────────────────────────────────────────────
+# BeanFeasa Sample Rules — Linux / Cross-Platform
+# ────────────────────────────────────────────────
+
+---
+id: linux-001
+title: SSH Brute Force Indicator
+description: Detects failed SSH authentication attempts that may indicate brute force.
+level: medium
+author: BeanFeasa
+tags:
+  - attack.credential_access
+  - attack.t1110
+detection:
+  selection:
+    message|contains:
+      - "Failed password"
+      - "authentication failure"
+      - "failed login"
+      - "Invalid user"
+      - "Connection closed by authenticating user"
+  condition: selection
+
+---
+id: linux-002
+title: Successful Root Login
+description: Detects successful root/administrator logins which should be monitored.
+level: high
+author: BeanFeasa
+tags:
+  - attack.initial_access
+  - attack.t1078
+detection:
+  root_login:
+    message|contains:
+      - "Accepted password for root"
+      - "Accepted publickey for root"
+      - "session opened for user root"
+  condition: root_login
+
+---
+id: linux-003
+title: Privilege Escalation via sudo
+description: Detects sudo usage, particularly by uncommon users or for sensitive commands.
+level: low
+author: BeanFeasa
+tags:
+  - attack.privilege_escalation
+  - attack.t1548
+detection:
+  selection:
+    message|contains:
+      - "sudo:"
+      - "COMMAND="
+  condition: selection
+
+---
+id: linux-004
+title: Firewall Rule Modification
+description: Detects changes to firewall rules (iptables, ufw, firewalld).
+level: high
+author: BeanFeasa
+tags:
+  - attack.defense_evasion
+  - attack.t1562.004
+detection:
+  selection:
+    message|contains:
+      - "iptables"
+      - "ufw allow"
+      - "ufw delete"
+      - "firewall-cmd"
+      - "nft add"
+      - "nft delete"
+  condition: selection
+
+---
+id: linux-005
+title: Cron Job Modified
+description: Detects modifications to cron jobs which may indicate persistence.
+level: medium
+author: BeanFeasa
+tags:
+  - attack.persistence
+  - attack.t1053.003
+detection:
+  selection:
+    message|contains:
+      - "CRON"
+      - "crontab"
+      - "/etc/cron"
+  source|contains:
+    - "cron"
+    - "CRON"
+  condition: selection
+
+---
+id: linux-006
+title: Kernel Module Loaded
+description: Detects kernel module loading events which could indicate rootkit installation.
+level: high
+author: BeanFeasa
+tags:
+  - attack.persistence
+  - attack.t1547.006
+detection:
+  selection:
+    message|contains:
+      - "insmod"
+      - "modprobe"
+      - "Loading module"
+      - "module loaded"
+  condition: selection
+
+---
+id: cross-001
+title: Suspicious Network Connections
+description: Detects references to suspicious network activity in logs.
+level: medium
+author: BeanFeasa
+tags:
+  - attack.command_and_control
+  - attack.t1071
+detection:
+  selection:
+    message|contains:
+      - "reverse shell"
+      - "bind shell"
+      - "nc -e"
+      - "ncat -e"
+      - "/dev/tcp/"
+      - "curl|bash"
+      - "wget|bash"
+  condition: selection
+
+---
+id: cross-002
+title: Data Exfiltration Indicators
+description: Detects patterns that may indicate data exfiltration attempts.
+level: high
+author: BeanFeasa
+tags:
+  - attack.exfiltration
+  - attack.t1048
+detection:
+  selection:
+    message|contains:
+      - "base64 -d"
+      - "xxd"
+      - "openssl enc"
+      - "gpg --encrypt"
+      - "tar czf"
+      - "7z a -p"
+      - "rclone"
+  condition: selection
